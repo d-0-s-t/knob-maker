@@ -133,7 +133,7 @@ function start() {
 	Object.keys(SLIDERS).forEach(( /** @type {keyof SLIDERS} */ key) => {
 		Object.keys(SLIDERS[key]).forEach(( /** @type {keyof SLIDERS[key]} */ key2) => {
 			SCHEMA.properties[key].properties[key2] = {
-				type: "slider",
+				type: "number",
 				min: SLIDERS[key][key2][0],
 				max: SLIDERS[key][key2][1],
 				step: SLIDERS[key][key2][2]

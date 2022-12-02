@@ -172,20 +172,33 @@ export class CONTROLS {
 
 		switch (propertyObj.type) {
 			case "slider":
+			case "number": {
 				inputElement = document.createElement("input")
-				inputElement.type = "range"
+				inputElement.type = propertyObj.type == "slider" ? "range" : "number"
 				inputElement.min = (propertyObj.min || 0) + ""
 				inputElement.max = (propertyObj.max || 1) + ""
 				inputElement.step = (propertyObj.step || 0.01) + ""
 				if (propertyObj.inverseDirection)
 					inputElement.classList.add("controlInverse")
 				inputElement.value = (source[key] || 0) + ""
+				let previousValue = inputElement.value
+				const regex = /^\d*\.?\d*$/
+
 				inputElement.addEventListener("input", () => {
 					let newValue = parseFloat(inputElement.value)
 					source[key] = newValue
-					propertyObj.onChange && propertyObj.onChange()
+					let callChange = true
+					if (propertyObj.type == "number") {
+						if (inputElement.value && !regex.test(inputElement.value)) {
+							inputElement.value = previousValue
+							callChange = false
+						} else
+							previousValue = inputElement.value
+					}
+					callChange && propertyObj.onChange && propertyObj.onChange()
 				})
 				break
+			}
 			case "toggle":
 				inputElement = document.createElement("input")
 				inputElement.type = "checkbox"
