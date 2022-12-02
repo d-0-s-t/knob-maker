@@ -1,7 +1,9 @@
 {
-	"name": "three-cube",
-	"version": "0.2.1",
+	"name": "knob-maker",
+	"version": "0.0.1",
 	"source": "src/knob.js",
+	"main": "dist/knob.js",
+	"module": "dist/knob.module.js",
 	"description": "Create a knob in babylonjs and export as STL",
 	"author": "d0st",
 	"keywords": [
@@ -16,7 +18,8 @@
 		"url": "https://github.com/d-0-s-t/knob-maker.git"
 	},
 	"scripts": {
-		"build": "parcel build && tsc --project jsconfig.json"
+		"build": "parcel build && tsc --project jsconfig.json",
+		"start": "node startScript.js && http-server"
 	},
 	"eslintConfig": {
 		"extends": [
@@ -87,7 +90,9 @@
 	"license": "MIT",
 	"devDependencies": {
 		"eslint": "^8.22.0",
-		"eslint-plugin-jsdoc": "^39.3.6"
+		"eslint-plugin-jsdoc": "^39.3.6",
+		"http-server": "^14.1.1",
+		"parcel": "^2.8.0"
 	},
 	"dependencies": {
 		"babylonjs": "^5.35.0",
