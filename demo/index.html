@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8">
+	<title>Knob Maker</title>
+	<meta name="description" content="Parametric Knob Maker for 3d Printing">
+	<meta name="keywords" content="create ornamental knobs maker">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="stylesheet" type="text/css" href="./styles/controls.css">
+	<link rel="stylesheet" type="text/css" href="./styles/knob-maker.css">
+	<script type="module" defer src="./js/knob-maker.js"></script>
+</head>
+
+<body>
+	<div id="configurationPanel">
+		<div id="controlsContainer"></div>
+	</div>
+	<div id="drawingContainer"><canvas id="mainCanvas"></canvas></div>
+	<button id="downloadSTL" class="icon-download icon-with-text icon-text-stl globalButton"></button>
+	<div id="pageInformation">
+		This is work in progress. STL files are no good for application.
+		</br>
+		TODO:
+		<ul>
+			<li> Input Boxes for controls </li>
+			<li> Threads, slots, teeth in screw hole </li>
+			<li> Body surface features </li>
+		</ul>
+	</div>
+</body>
+
+</html>

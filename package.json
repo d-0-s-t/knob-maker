@@ -1,0 +1,96 @@
+{
+	"name": "three-cube",
+	"version": "0.2.1",
+	"source": "src/knob.js",
+	"description": "Create a knob in babylonjs and export as STL",
+	"author": "d0st",
+	"keywords": [
+		"knob",
+		"maker",
+		"parametrized",
+		"babylonjs"
+	],
+	"homepage": "https://www.d0st.me/app/knobs",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/d-0-s-t/knob-maker.git"
+	},
+	"scripts": {
+		"build": "parcel build && tsc --project jsconfig.json"
+	},
+	"eslintConfig": {
+		"extends": [
+			"eslint:recommended",
+			"plugin:jsdoc/recommended"
+		],
+		"parserOptions": {
+			"ecmaVersion": 6,
+			"sourceType": "module"
+		},
+		"env": {
+			"es6": true,
+			"browser": true
+		},
+		"rules": {
+			"no-var": "error",
+			"indent": [
+				"error",
+				"tab",
+				{
+					"SwitchCase": 1
+				}
+			],
+			"linebreak-style": [
+				"error",
+				"unix"
+			],
+			"quotes": [
+				"error",
+				"double"
+			],
+			"semi": [
+				"error",
+				"never"
+			],
+			"jsdoc/multiline-blocks": [
+				"error",
+				{
+					"noZeroLineText": false,
+					"noFinalLineText": false
+				}
+			],
+			"jsdoc/require-param-description": 0,
+			"jsdoc/require-returns-description": 0,
+			"jsdoc/newline-after-description": 0,
+			"jsdoc/require-property-description": 0,
+			"jsdoc/require-jsdoc": [
+				"error",
+				{
+					"exemptEmptyFunctions": true,
+					"require": {
+						"ArrowFunctionExpression": false,
+						"FunctionExpression": true,
+						"MethodDefinition": true
+					}
+				}
+			]
+		},
+		"settings": {
+			"jsdoc": {
+				"mode": "typescript"
+			}
+		},
+		"plugins": [
+			"jsdoc"
+		]
+	},
+	"license": "MIT",
+	"devDependencies": {
+		"eslint": "^8.22.0",
+		"eslint-plugin-jsdoc": "^39.3.6"
+	},
+	"dependencies": {
+		"babylonjs": "^5.35.0",
+		"babylonjs-serializers": "^5.35.0"
+	}
+}
