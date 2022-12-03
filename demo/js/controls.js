@@ -158,7 +158,7 @@ export class CONTROLS {
 		propertyContainer.classList.add("controlElementContainer", "controlDisplaySpaceBetween")
 		const labelElem = document.createElement("label")
 		labelElem.classList.add("controlLabel")
-		labelElem.innerHTML = propertyObj.label || key
+		labelElem.innerHTML = propertyObj.label || key.replace(/([a-z])([A-Z])/g, "$1 $2")
 		propertyContainer.appendChild(labelElem)
 		if (!propertyObj.type)
 			propertyObj.type = "slider"

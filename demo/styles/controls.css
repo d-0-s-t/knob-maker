@@ -26,6 +26,7 @@
 
 .controlElementContainer .controlLabel {
 	line-height: 30px;
+	text-transform: capitalize;
 }
 
 .controlDisplaySpaceBetween {
@@ -118,4 +119,9 @@ input.colorHandle.rangeSliderHandle {
 	height: 22px;
 	border: 0px;
 	width: 18px;
+}
+
+input.controlElement[type="number"] {
+	width: 80px;
+	text-align: right;
 }
