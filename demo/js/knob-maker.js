@@ -71,6 +71,14 @@ const KNOB_CONFIG = {
 		rStart: 6.37,
 		widthEnd: 0.02,
 		widthStart: 0.24
+	},
+	knurling: {
+		sizeX: 1,
+		sizeY: 1,
+		depth: 0.5,
+		spacingY: 0.2,
+		radialCount: 50,
+		verticalOffset: 0
 	}
 }
 
@@ -90,7 +98,12 @@ const SCHEMA = {
 		pointer: {
 			"properties": {},
 			"onChange": () => { updateKnob("pointer") }
+		},
+		knurling: {
+			"properties": {},
+			"onChange": () => { updateKnob("knurling") }
 		}
+		//"splines": {}, to be implemented
 	}
 }
 
@@ -125,6 +138,14 @@ const SLIDERS = {
 		rEnd: [0, 100],
 		widthStart: [0, Math.PI / 6],
 		widthEnd: [0, Math.PI / 6]
+	},
+	knurling: {
+		sizeX: [0, 3],
+		sizeY: [0, 5],
+		depth: [0, 4],
+		spacingY: [0, 10],
+		radialCount: [1, 100, 1],
+		verticalOffset: [0, 10]
 	}
 }
 
@@ -139,21 +160,34 @@ function start() {
 	window.currentKnob = currentKnob
 }
 
+
 function setDOM() {
-	Object.keys(SLIDERS).forEach(( /** @type {keyof SLIDERS} */ key) => {
-		Object.keys(SLIDERS[key]).forEach(( /** @type {keyof SLIDERS[key]} */ key2) => {
-			SCHEMA.properties[key].properties[key2] = {
-				type: "number",
-				min: SLIDERS[key][key2][0],
-				max: SLIDERS[key][key2][1],
-				step: SLIDERS[key][key2][2]
-			}
-		})
-	})
+	fillSchema(SLIDERS, SCHEMA)
 	SCHEMA.properties.screwHole.properties.doubleD = {
 		"type": "toggle",
 	}
 	onResize()
+}
+
+/**
+ * @param {{[s:string]:number[]}} source
+ * @param {CONTROLS_TYPES.BaseProperty} schemaTarget
+ */
+function fillSchema(source, schemaTarget) {
+	for (let key in source) {
+		if (source[key].constructor != Array)
+			fillSchema(source[key], schemaTarget.properties[key])
+		else {
+			if (!schemaTarget.properties)
+				schemaTarget.properties = {}
+			schemaTarget.properties[key] = {
+				type: "number",
+				min: source[key][0],
+				max: source[key][1],
+				step: source[key][2]
+			}
+		}
+	}
 }
 
 function onResize() {
@@ -176,7 +210,7 @@ function setScene() {
 }
 
 /**
- * @param {any} updatedPart 
+ * @param {keyof import("./knob.js").KNOB_CONFIG} updatedPart 
  */
 function updateKnob(updatedPart) {
 	currentKnob.update(KNOB_CONFIG, [updatedPart])
