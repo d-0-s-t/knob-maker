@@ -29,7 +29,7 @@
  * actual use.
  */
 
-import "../../node_modules/babylonjs/babylon.js"
+import "./babylonjs.js"
 import { CONTROLS } from "./controls.js"
 import { KNOB } from "./knob.js"
 
@@ -57,10 +57,11 @@ const KNOB_CONFIG = {
 		balance: 0.5
 	},
 	screwHole: {
-		radius: 1,
-		topRadius: 1,
+		radius: 5,
+		topRadius: 5,
+		bottomRadius: 5,
 		height: 2,
-		bottomRadius: 1
+		flatWidth: 0
 	},
 	pointer: {
 		height: 10.29,
@@ -112,7 +113,8 @@ const SLIDERS = {
 		bottomRadius: [0, 10],
 		sides: [0, 25, 1],
 		balance: [0, 1],
-		offset: [0, 2 * Math.PI]
+		offset: [0, 2 * Math.PI],
+		flatWidth: [0, 100]
 	},
 	/** @type {{[K in keyof import("./knob.js").KNOB_POINTER]: number[]}} */
 	pointer: {
@@ -130,6 +132,14 @@ const SLIDERS = {
 let currentKnob
 
 function start() {
+	setDOM()
+	setBindings()
+	setScene()
+	currentKnob = new KNOB(KNOB_CONFIG, scene)
+	window.currentKnob = currentKnob
+}
+
+function setDOM() {
 	Object.keys(SLIDERS).forEach(( /** @type {keyof SLIDERS} */ key) => {
 		Object.keys(SLIDERS[key]).forEach(( /** @type {keyof SLIDERS[key]} */ key2) => {
 			SCHEMA.properties[key].properties[key2] = {
@@ -140,14 +150,9 @@ function start() {
 			}
 		})
 	})
-	setDOM()
-	setBindings()
-	setScene()
-	currentKnob = new KNOB(KNOB_CONFIG, scene)
-	window.currentKnob = currentKnob
-}
-
-function setDOM() {
+	SCHEMA.properties.screwHole.properties.doubleD = {
+		"type": "toggle",
+	}
 	onResize()
 }
 

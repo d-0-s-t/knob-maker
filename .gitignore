@@ -3,3 +3,5 @@
 /node_modules
 /.parcel-cache
 /demo/js/knob.js
+demo/js/babylonjs.js
+demo/js/babylonjs-serializers.js

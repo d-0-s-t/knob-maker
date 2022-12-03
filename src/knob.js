@@ -59,6 +59,8 @@ import "babylonjs-serializers"
  * @typedef {object} ONLY_KNOB_SLOT
  * @property {number} [balance] same as body options but defaults to one
  * @property {number} [offset]
+ * @property {number} [flatWidth]
+ * @property {number} [doubleD] boolean
  * @typedef {KNOB_BODY_OPTIONS & ONLY_KNOB_SLOT} KNOB_SLOT
  */
 
@@ -103,9 +105,9 @@ export class KNOB {
 				bodyConfig.topRadius = bodyConfig.radius
 			if (bodyConfig.sides < 3)
 				delete bodyConfig.sides
-			if (bodyConfig.balance == undefined)
-				bodyConfig.balance = 0.5
 		}
+		if (this.config.body.balance == undefined)
+			this.config.body.balance = 0.5
 
 		fillDefaultsOnBody(this.config.body)
 		if ("screwHole" in this.config) {
@@ -114,6 +116,10 @@ export class KNOB {
 				this.config.screwHole.balance = 1
 			if (this.config.screwHole.bottomRadius == undefined)
 				this.config.screwHole.bottomRadius = this.config.screwHole.radius
+			if (this.config.screwHole.flatWidth == undefined)
+				this.config.screwHole.flatWidth = 0
+			if (this.config.screwHole.offset == undefined)
+				this.config.screwHole.offset = 0
 		}
 
 		if ("pointer" in this.config) {
@@ -140,15 +146,20 @@ export class KNOB {
 		if (partsToUpdate.indexOf("body") + 1) {
 			this.baseShape && this.baseShape.dispose()
 			Object.assign(this.config.body, config.body)
-			this.baseShape = this._createBody(config.body)
+			this.baseShape = this._createBody(this.config.body)
 			bodyUpdated = true
 		}
 		if (partsToUpdate.indexOf("screwHole") + 1) {
 			Object.assign(this.config.screwHole, config.screwHole)
-			const tempShape = this._createScrewHole(config.screwHole)
+			const tempShape = this._createScrewHole(this.config.screwHole)
 			this.screwHoleShape && this.screwHoleShape.dispose()
 			this.screwHoleShape = tempShape
 			bodyUpdated = true
+			this.dBlockShape && this.dBlockShape.dispose()
+			if (this.config.screwHole.flatWidth) {
+				this.dBlockShape = this._createFlatSection(this.config.screwHole)
+
+			}
 		}
 		if (bodyUpdated) {
 			if (this.baseShape && this.screwHoleShape) {
@@ -210,6 +221,52 @@ export class KNOB {
 			return mesh
 		}
 		return null
+	}
+
+	/**
+	 * 
+	 * @param {KNOB_SLOT} screwHoleConfig 
+	 * @returns {BABYLON.Mesh}
+	 */
+	_createFlatSection(screwHoleConfig) {
+		const radius = screwHoleConfig.bottomRadius
+		let halfWidth = screwHoleConfig.flatWidth / 2
+		halfWidth = Math.min(radius, halfWidth)
+		let theta = Math.PI / 2 - Math.asin(halfWidth / radius)
+		const theta2 = Math.PI - theta
+		console.log(theta, theta2)
+
+		const arcTessellations = 20
+		const thetaStep = (theta2 - theta) / arcTessellations
+		const points = []
+		const radiusOffset = Math.sqrt(radius * radius - halfWidth * halfWidth)
+		const centerPoint = new BABYLON.Vector3(0, radiusOffset, 0)
+		const direction = new BABYLON.Vector3(0, 0, 0)
+		for (let i = 0; i <= arcTessellations; i++) {
+			const x = Math.cos(theta)
+			const y = Math.sin(theta)
+			const point = new BABYLON.Vector3(x, y, 0).scaleInPlace(radius)
+			//this so that there is not gap between the block and inner-radius
+			point.addInPlace(direction.copyFrom(point).subtractInPlace(centerPoint).normalizeToRef(direction)
+				.scaleInPlace(1))
+			points.push(point)
+			theta += thetaStep
+		}
+
+		points.push(points[0].clone())
+		const extrudeLength = screwHoleConfig.balance * screwHoleConfig.height
+		const mesh1 = BABYLON.MeshBuilder.ExtrudeShape("dBlockShape", {
+			shape: points,
+			path: [new BABYLON.Vector3(0, 0, 0), new BABYLON.Vector3(0, extrudeLength, 0)],
+			cap: BABYLON.Mesh.CAP_ALL
+		})
+		mesh1.rotation.y = screwHoleConfig.offset
+		if (screwHoleConfig.doubleD) {
+			const mesh2 = mesh1.clone("dBlockShape2")
+			mesh2.rotation.y += Math.PI
+			return BABYLON.Mesh.MergeMeshes([mesh1, mesh2], true)
+		} else
+			return mesh1
 	}
 
 	/**
@@ -311,6 +368,7 @@ export class KNOB {
 		this.baseShape.dispose()
 		this.screwHoleShape && this.screwHoleShape.dispose()
 		this.bodyShape.dispose()
+		this.dBlockShape && this.dBlockShape.dispose()
 		this.pointerShape && this.pointerShape.dispose()
 	}
 

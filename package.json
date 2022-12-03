@@ -19,7 +19,7 @@
 	},
 	"scripts": {
 		"build": "parcel build && tsc --project jsconfig.json",
-		"start": "node startScript.js && http-server"
+		"start": "node startScript.js"
 	},
 	"eslintConfig": {
 		"extends": [
@@ -85,10 +85,23 @@
 		},
 		"plugins": [
 			"jsdoc"
-		]
+		],
+		"overrides": [{
+			"files": [
+				"startScript.js"
+			],
+			"env": {
+				"node": true,
+				"browser": false
+			},
+			"parserOptions": {
+				"ecmaVersion": 8
+			}
+		}]
 	},
 	"license": "MIT",
 	"devDependencies": {
+		"chokidar": "^3.5.3",
 		"eslint": "^8.22.0",
 		"eslint-plugin-jsdoc": "^39.3.6",
 		"http-server": "^14.1.1",

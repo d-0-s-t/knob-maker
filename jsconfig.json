@@ -14,5 +14,6 @@
 	},
 	"include": [
 		"src/knob.js"
-	]
+	],
+	"exclude": ["startScript.js"]
 }
