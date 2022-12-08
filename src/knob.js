@@ -69,7 +69,13 @@ import "babylonjs-serializers"
  * @property {KNOB_BODY} body
  * @property {KNOB_POINTER} [pointer]
  * @property {KNOB_SLOT} [screwHole]
- * @property {KNURLING_CONFIG} [knurling]
+ * @property {SURFACE_CONFIG} [surface]
+ */
+
+/**
+ * @typedef {object} SURFACE_CONFIG
+ * @property {KNURLING_CONFIG[]} [knurling]
+ * @property {any} [splines]
  */
 
 /**
@@ -77,10 +83,13 @@ import "babylonjs-serializers"
  * @property {number} sizeX
  * @property {number} sizeY
  * @property {number} depth
- * @property {number} verticalOffset 
- * @property {number} spacingY
  * @property {number} radialCount
- * @property {"pyramid"|"rectangle"} shape Not implemented. Defaults to pyramid
+ * @property {number} [verticalSpacing]
+ * @property {number} [verticalOffset] 
+ * @property {number} [rise]
+ * @property {number[]} [range]
+ * @property {number} [shapeRotation]
+ * @property {"pyramid"|"rectangle"|"cylinder"|"cone"|"triangle"} [shape] Not implemented. Defaults to pyramid
  */
 
 /** one per millimeter */
@@ -142,7 +151,7 @@ export class KNOB {
 	}
 	/**
 	 * @param {KNOB_CONFIG} config
-	 * @param {(keyof KNOB_CONFIG)[]} [partsToUpdate] 
+	 * @param {(keyof KNOB_CONFIG|"knurling"|"splines")[]} [partsToUpdate] 
 	 */
 	update(config, partsToUpdate) {
 		if (!partsToUpdate || partsToUpdate.length == 0) {
@@ -161,6 +170,7 @@ export class KNOB {
 			Object.assign(this.config.body, config.body)
 			this.baseShape = this._createBody(this.config.body)
 			bodyUpdated = true
+			partsToUpdate.push("surface")
 		}
 		if (partsToUpdate.indexOf("screwHole") + 1) {
 			Object.assign(this.config.screwHole, config.screwHole)
@@ -175,10 +185,15 @@ export class KNOB {
 			}
 		}
 
+		if (partsToUpdate.indexOf("surface") + 1) {
+			partsToUpdate.push("knurling")
+			partsToUpdate.push("splines")
+		}
+
 		if (partsToUpdate.indexOf("knurling") + 1) {
 			this.knurlingMeshes.forEach(mesh => mesh.dispose())
-			Object.assign(this.config.knurling, config.knurling)
-			this.knurlingMeshes = this._createKnurling(this.config.knurling)
+			this.config.surface.knurling = JSON.parse(JSON.stringify(config.surface.knurling))
+			this.knurlingMeshes = this._createKnurlingGroup(this.config.surface.knurling)
 		}
 
 		if (bodyUpdated) {
@@ -213,6 +228,13 @@ export class KNOB {
 			shape.push(...phase1)
 			shape.push(...this._tessellatePath(midPoint, endPoint, bodyConfig.smoothing))
 			shape.push(new BABYLON.Vector3(0, bodyConfig.height, 0))
+		}
+		this.profileLengthMap = [0]
+		this.sideProfile = shape.filter((v, i) => !(i == 0 || i == shape.length - 1))
+		let distance = 0
+		for (let i = 2; i < shape.length - 1; i++) {
+			distance += BABYLON.Vector3.Distance(shape[i], shape[i - 1])
+			this.profileLengthMap.push(distance)
 		}
 		return BABYLON.MeshBuilder.CreateLathe("baseShape", {
 			shape: shape,
@@ -385,71 +407,204 @@ export class KNOB {
 	}
 
 	/**
-	 * @param {KNURLING_CONFIG} config 
+	 * @param {KNURLING_CONFIG[]} config 
 	 * @returns {BABYLON.Mesh[]}
 	 */
-	_createKnurling(config) {
+	_createKnurlingGroup(config) {
 		const array = /** @type {BABYLON.Mesh[]} */ ([])
+		const _this = this
+		config.forEach(c => _this._createKnurling(c, array))
+		return array
+	}
+
+	/**
+	 * @param {KNURLING_CONFIG} config
+	 * @param {(BABYLON.Mesh|BABYLON.InstancedMesh)[]} meshArr
+	 */
+	_createKnurling(config, meshArr) {
+		const _this = this
+		/**
+		 * @param {number} slot 
+		 * @param {number} distance 
+		 * @returns {{angle:number,y:number,x:number}}
+		 */
+		function getSlopeAndYAt(slot, distance) {
+			const startD = _this.profileLengthMap[slot]
+			const endD = _this.profileLengthMap[slot + 1]
+
+			const dRatio = (distance - startD) / (endD - startD)
+			const point1 = _this.sideProfile[slot]
+			const point2 = _this.sideProfile[slot + 1]
+			return {
+				x: ((point2.x - point1.x) * dRatio) + point1.x,
+				y: ((point2.y - point1.y) * dRatio) + point1.y,
+				angle: Math.atan2(point2.y - point1.y, point2.x - point1.x) - Math.PI / 2
+			}
+		}
+
+		/**
+		 * @param {number} y 
+		 * @returns {number}
+		 */
+		function getDistanceAtY(y) {
+			let slot = 1
+			while (_this.sideProfile[slot] && _this.sideProfile[slot].y < y)
+				slot++
+
+			const start = _this.sideProfile[slot - 1]
+			const end = _this.sideProfile[slot]
+			const distRatio = (y - start.y) / (end.y - start.y)
+			return _this.profileLengthMap[slot - 1] +
+				(_this.profileLengthMap[slot] - _this.profileLengthMap[slot - 1]) * distRatio
+
+		}
 
 		if (!(config.sizeX && config.sizeY && config.depth))
-			return array
-
-		const halfX = config.sizeX / 2
+			return
+		/** @type {BABYLON.Mesh} */
+		let baseMesh
+		if (!config.shape)
+			config.shape = "pyramid"
 		const halfY = config.sizeY / 2
-		const knurlingShape = {
-			"name": "Square Pyramid (J1)",
-			"category": ["Johnson Solid"],
-			"vertex": [
-				[-halfX, -halfY, 0],
-				[-halfX, halfY, 0],
-				[halfX, halfY, 0],
-				[halfX, -halfY, 0],
-				[0, 0, config.depth]
-			],
-			"face": [
-				[1, 4, 2],
-				[0, 1, 2],
-				[3, 0, 2],
-				[4, 3, 2],
-				[4, 1, 0, 3]
-			]
-		}
-		const baseMesh = BABYLON.MeshBuilder.CreatePolyhedron("basePolyHedra", {
-			custom: knurlingShape
-		})
-		baseMesh.position.x = this.config.body.radius
-		baseMesh.rotation.y = Math.PI / 2
-		baseMesh.position.y = halfY
-		const yDist = config.sizeY + config.spacingY
-		const radialStep = Math.PI * 2 / config.radialCount
-		let radialPosition = 0
-		const verticalAxis = new BABYLON.Vector3(0, 1, 0)
-		let meshID = 0
-		for (let j = 0; j < config.radialCount; j++) {
-			let yPos = halfY - (config.verticalOffset * j)
-			while (yPos < 0) {
-				yPos += config.sizeY
+		switch (config.shape) {
+			case "cone":
+			case "cylinder":
+				baseMesh = BABYLON.MeshBuilder.CreateCylinder("baseCylinder", {
+					diameter: config.sizeX,
+					height: config.depth,
+					diameterTop: config.shape == "cone" ? 0 : null,
+				})
+				baseMesh.setPivotPoint(new BABYLON.Vector3(0, -config.depth / 2, 0), BABYLON.Space.LOCAL)
+				baseMesh.rotation.x = Math.PI / 2
+				break
+			case "rectangle":
+				baseMesh = BABYLON.MeshBuilder.CreateBox("baseBox", {
+					width: config.sizeX,
+					height: config.sizeY,
+					depth: config.depth
+				})
+				baseMesh.rotation.z = config.shapeRotation || 0
+				break
+			case "triangle":
+				baseMesh = BABYLON.MeshBuilder.ExtrudeShape("baseTraingle", {
+					shape: [new BABYLON.Vector3(0, halfY, 0),
+						new BABYLON.Vector3(-config.sizeX / 2, -halfY, 0),
+						new BABYLON.Vector3(config.sizeX / 2, -halfY, 0)
+					],
+					closeShape: true,
+					path: [new BABYLON.Vector3(0, 0, 0), new BABYLON.Vector3(0, 0, config.depth)],
+					cap: BABYLON.Mesh.CAP_ALL
+				})
+				baseMesh.convertToFlatShadedMesh()
+				baseMesh.rotation.z = config.shapeRotation || 0
+				break
+			case "pyramid": {
+				const halfX = config.sizeX / 2
+				const knurlingShape = {
+					"name": "Square Pyramid (J1)",
+					"category": ["Johnson Solid"],
+					"vertex": [
+						[-halfX, -halfY, 0],
+						[-halfX, halfY, 0],
+						[halfX, halfY, 0],
+						[halfX, -halfY, 0],
+						[0, 0, config.depth]
+					],
+					"face": [
+						[1, 4, 2],
+						[0, 1, 2],
+						[3, 0, 2],
+						[4, 3, 2],
+						[4, 1, 0, 3]
+					]
+				}
+				baseMesh = BABYLON.MeshBuilder.CreatePolyhedron("basePolyHedra", {
+					custom: knurlingShape
+				})
+				baseMesh.rotation.z = config.shapeRotation || 0
+				break
 			}
-			while (yPos < this.config.body.height) {
-				const t = baseMesh.clone(baseMesh.name + meshID++)
-				t.rotateAround(new BABYLON.Vector3(0, 0, 0), verticalAxis, radialPosition)
-				array.push(t)
-				t.position.y = yPos
+		}
+
+		baseMesh.position.z = this.config.body.radius - ((1 - config.rise) * config.depth)
+
+		if (config.shape == "rectangle")
+			baseMesh.position.z += config.depth / 2
+
+		const yStart = this.config.body.height * config.range[0] + halfY
+		const yEnd = this.config.body.height * config.range[1] - halfY
+		baseMesh.position.y = yStart
+		const yDist = config.sizeY + config.verticalSpacing
+		config.radialCount = Math.min(100, config.radialCount)
+		const radialStep = Math.PI * 2 / config.radialCount
+		let angle = 0
+		const verticalAxis = new BABYLON.Vector3(0, 1, 0)
+		const xAxis = new BABYLON.Vector3(-1, 0, 0)
+		const center = BABYLON.Vector3.Zero()
+		let meshID = 0
+		/** @type {BABYLON.InstancedMesh} */
+		let referenceMesh
+		/** profile is cylinder */
+		if ((this.config.body.topRadius == this.config.body.radius &&
+				this.config.body.topRadius == this.config.body.bottomRadius)) {
+			for (let j = 0; j < config.radialCount; j++) {
+				let yPos = yStart - (config.verticalOffset * j)
+				while (yPos < yStart) {
+					yPos += config.sizeY
+				}
+				referenceMesh = null
+				while (yPos < yEnd) {
+					const t = baseMesh.createInstance(baseMesh.name + meshID++)
+					if (!referenceMesh) {
+						t.rotateAround(center, verticalAxis, angle)
+						referenceMesh = t
+					} else {
+						copyRotation(t, referenceMesh)
+						t.position.copyFrom(referenceMesh.position)
+					}
+					meshArr.push(t)
+					t.position.y = yPos
+					yPos += yDist
+				}
+				angle += radialStep
+			}
+		} else {
+			const slopeHeightMap = /** @type {{angle:number,y:number,x:number}[]} */ ([])
+			let slot = 0
+			let yPos = getDistanceAtY(this.config.body.height * config.range[0]) + halfY
+			const yPosLimit = getDistanceAtY(this.config.body.height * config.range[1]) - halfY
+			while (yPos < yPosLimit) {
+				while (yPos > this.profileLengthMap[slot]) {
+					slot++
+				}
+				slopeHeightMap.push(getSlopeAndYAt(slot - 1, yPos))
 				yPos += yDist
 			}
-			radialPosition += radialStep
+			for (let j = 0; j < config.radialCount; j++) {
+				for (let i = 0; i < slopeHeightMap.length; i++) {
+					const t = baseMesh.createInstance(baseMesh.name + meshID++)
+					t.position.y = slopeHeightMap[i].y
+					t.position.z = slopeHeightMap[i].x
+					t.rotateAround(
+						new BABYLON.Vector3(0, t.position.y, t.position.z),
+						xAxis,
+						slopeHeightMap[i].angle
+					)
+					t.rotateAround(center, verticalAxis, angle)
+					meshArr.push(t)
+				}
+				angle += radialStep
+			}
 		}
-		const lastMesh = array.pop()
-		array.push(baseMesh)
+		const lastMesh = meshArr.pop()
+		if (!lastMesh) {
+			baseMesh.dispose()
+			return
+		}
+		meshArr.push(baseMesh)
 		baseMesh.position.copyFrom(lastMesh.position)
-		baseMesh.rotation.copyFrom(lastMesh.rotation)
-		if (lastMesh.rotationQuaternion) {
-			if (!baseMesh.rotationQuaternion)
-				baseMesh.rotationQuaternion = new BABYLON.Quaternion(0, 0, 0, 1)
-			baseMesh.rotationQuaternion.copyFrom(lastMesh.rotationQuaternion)
-		}
+		copyRotation(baseMesh, lastMesh)
 		lastMesh.dispose()
-		return array
 	}
 
 	dispose() {
@@ -463,5 +618,18 @@ export class KNOB {
 	exportSTL() {
 		//@ts-ignore
 		BABYLON.STLExport.CreateSTL(this.scene.meshes, true, "knob", false, false)
+	}
+}
+
+/**
+ * @param {BABYLON.Mesh|BABYLON.InstancedMesh} targetMesh 
+ * @param {BABYLON.Mesh|BABYLON.InstancedMesh} sourceMesh 
+ */
+function copyRotation(targetMesh, sourceMesh) {
+	targetMesh.rotation.copyFrom(sourceMesh.rotation)
+	if (sourceMesh.rotationQuaternion) {
+		if (!targetMesh.rotationQuaternion)
+			targetMesh.rotationQuaternion = new BABYLON.Quaternion(0, 0, 0, 1)
+		targetMesh.rotationQuaternion.copyFrom(sourceMesh.rotationQuaternion)
 	}
 }

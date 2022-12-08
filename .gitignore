@@ -2,6 +2,9 @@
 
 /node_modules
 /.parcel-cache
-/demo/js/knob.js
+demo/js/knob.js
 demo/js/babylonjs.js
 demo/js/babylonjs-serializers.js
+demo/scripts/knob.js
+demo/scripts/babylonjs.js
+demo/scripts/babylonjs-serializers.js

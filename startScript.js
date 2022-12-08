@@ -9,7 +9,7 @@ const resolveImports = {
 }
 
 for (let key in resolveImports) {
-	FS.copyFileSync(resolveImports[key], `demo/js/${key}.js`)
+	FS.copyFileSync(resolveImports[key], `demo/scripts/${key}.js`)
 }
 
 function copySource() {
@@ -22,7 +22,7 @@ function copySource() {
 			else if (resolveImports[matches[1]])
 				return `import "./${matches[1]}.js"\n`
 		})
-	FS.writeFileSync("demo/js/knob.js", content, "utf-8")
+	FS.writeFileSync("demo/scripts/knob.js", content, "utf-8")
 	console.log("copied")
 }
 
