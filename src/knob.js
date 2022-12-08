@@ -75,7 +75,7 @@ import "babylonjs-serializers"
 /**
  * @typedef {object} SURFACE_CONFIG
  * @property {KNURLING_CONFIG[]} [knurling]
- * @property {any} [splines]
+ * @property {SPLINE[]} [splines]
  */
 
 /**
@@ -92,8 +92,28 @@ import "babylonjs-serializers"
  * @property {"pyramid"|"rectangle"|"cylinder"|"cone"|"triangle"} [shape] Not implemented. Defaults to pyramid
  */
 
+/**
+ * @typedef {object} SPLINE
+ * @property {number} count
+ * @property {number[]} range
+ * @property {"gear"|"block"} profile The shape of the tooth
+ * @property {number} height the height of the tooth radially.
+ * @property {number} thickness
+ * @property {number} [tipThichness]
+ * @property {number} [rootThichness]
+ * @property {number} [topScale=1]
+ * @property {number} [bottomScale=1]
+ * @property {number} [scaleSmoothing=0]
+ * @property {number} [angle=0]
+ * @property {number} [angleSmoothing=0]
+ */
+
 /** one per millimeter */
 const TESELLATION = 1
+
+/**
+ * @typedef {BABYLON.Mesh|BABYLON.InstancedMesh} Mesh
+ */
 
 export class KNOB {
 
@@ -106,7 +126,8 @@ export class KNOB {
 	constructor(config, scene, draftMode) {
 		this.fillDefaults(config)
 		this.scene = scene
-		this.knurlingMeshes = /** @type {BABYLON.Mesh[]} */ ([])
+		this.knurlingMeshes = /** @type {Mesh[]} */ ([])
+		this.splines = /** @type {Mesh[]} */ ([])
 		this.update(config)
 	}
 
@@ -196,6 +217,12 @@ export class KNOB {
 			this.knurlingMeshes = this._createKnurlingGroup(this.config.surface.knurling)
 		}
 
+		if (partsToUpdate.indexOf("splines") + 1) {
+			this.splines.forEach(mesh => mesh.dispose())
+			this.config.surface.splines = JSON.parse(JSON.stringify(config.surface.splines))
+			this.splines = this._createSplinesGroup(this.config.surface.splines)
+		}
+
 		if (bodyUpdated) {
 			if (this.baseShape && this.screwHoleShape) {
 				this.bodyShape && this.bodyShape.dispose()
@@ -276,7 +303,6 @@ export class KNOB {
 		halfWidth = Math.min(radius, halfWidth)
 		let theta = Math.PI / 2 - Math.asin(halfWidth / radius)
 		const theta2 = Math.PI - theta
-		console.log(theta, theta2)
 
 		const arcTessellations = 20
 		const thetaStep = (theta2 - theta) / arcTessellations
@@ -345,17 +371,26 @@ export class KNOB {
 		const xDiff = endPoint.x - startPoint.x
 		let position = 0
 		const step = 1 / subDivisions
-		const factor = 1 + (smoothing * 2)
 		for (let i = 0; i <= subDivisions; i++) {
 			const point = new BABYLON.Vector3(0, 0, 0)
-			let xPosition = opposite ? 1 - Math.pow(1 - position, factor) : Math.pow(position, factor)
-			point.x = startPoint.x + (xDiff * xPosition)
+			point.x = startPoint.x + (xDiff * this._smoothF(position, smoothing, opposite))
 			point.y = yPos
 			yPos += yIncrement
 			path.push(point)
 			position += step
 		}
 		return path
+	}
+
+	/**
+	 * @param {number} pos
+	 * @param {number} smoothing 
+	 * @param {boolean} [oppDir] 
+	 * @returns {number}
+	 */
+	_smoothF(pos, smoothing, oppDir) {
+		const factor = 1 + (smoothing * 2)
+		return oppDir ? 1 - Math.pow(1 - pos, factor) : Math.pow(pos, factor)
 	}
 
 	/**
@@ -422,43 +457,6 @@ export class KNOB {
 	 * @param {(BABYLON.Mesh|BABYLON.InstancedMesh)[]} meshArr
 	 */
 	_createKnurling(config, meshArr) {
-		const _this = this
-		/**
-		 * @param {number} slot 
-		 * @param {number} distance 
-		 * @returns {{angle:number,y:number,x:number}}
-		 */
-		function getSlopeAndYAt(slot, distance) {
-			const startD = _this.profileLengthMap[slot]
-			const endD = _this.profileLengthMap[slot + 1]
-
-			const dRatio = (distance - startD) / (endD - startD)
-			const point1 = _this.sideProfile[slot]
-			const point2 = _this.sideProfile[slot + 1]
-			return {
-				x: ((point2.x - point1.x) * dRatio) + point1.x,
-				y: ((point2.y - point1.y) * dRatio) + point1.y,
-				angle: Math.atan2(point2.y - point1.y, point2.x - point1.x) - Math.PI / 2
-			}
-		}
-
-		/**
-		 * @param {number} y 
-		 * @returns {number}
-		 */
-		function getDistanceAtY(y) {
-			let slot = 1
-			while (_this.sideProfile[slot] && _this.sideProfile[slot].y < y)
-				slot++
-
-			const start = _this.sideProfile[slot - 1]
-			const end = _this.sideProfile[slot]
-			const distRatio = (y - start.y) / (end.y - start.y)
-			return _this.profileLengthMap[slot - 1] +
-				(_this.profileLengthMap[slot] - _this.profileLengthMap[slot - 1]) * distRatio
-
-		}
-
 		if (!(config.sizeX && config.sizeY && config.depth))
 			return
 		/** @type {BABYLON.Mesh} */
@@ -571,13 +569,13 @@ export class KNOB {
 		} else {
 			const slopeHeightMap = /** @type {{angle:number,y:number,x:number}[]} */ ([])
 			let slot = 0
-			let yPos = getDistanceAtY(this.config.body.height * config.range[0]) + halfY
-			const yPosLimit = getDistanceAtY(this.config.body.height * config.range[1]) - halfY
+			let yPos = this.getDistanceAtY(this.config.body.height * config.range[0]) + halfY
+			const yPosLimit = this.getDistanceAtY(this.config.body.height * config.range[1]) - halfY
 			while (yPos < yPosLimit) {
 				while (yPos > this.profileLengthMap[slot]) {
 					slot++
 				}
-				slopeHeightMap.push(getSlopeAndYAt(slot - 1, yPos))
+				slopeHeightMap.push(this.getProfileInfoAt(yPos, slot - 1))
 				yPos += yDist
 			}
 			for (let j = 0; j < config.radialCount; j++) {
@@ -605,6 +603,150 @@ export class KNOB {
 		baseMesh.position.copyFrom(lastMesh.position)
 		copyRotation(baseMesh, lastMesh)
 		lastMesh.dispose()
+	}
+
+	/**
+	 * @param {SPLINE[]} config
+	 * @returns {(BABYLON.Mesh|BABYLON.InstancedMesh)[]}
+	 */
+	_createSplinesGroup(config) {
+		const array = /** @type {BABYLON.Mesh[]} */ ([])
+		const _this = this
+		config.forEach(c => _this._createSpline(c, array))
+		return array
+	}
+
+	/**
+	 * @param {SPLINE} config
+	 * @param {(BABYLON.Mesh|BABYLON.InstancedMesh)[]} arr
+	 */
+	_createSpline(config, arr) {
+		if (config.count < 1)
+			return
+
+		const profile = /** (@BABYLON.Vector3) */ ([])
+		const start = this.getDistanceAtY(config.range[0] * this.config.body.height)
+		const end = this.getDistanceAtY(config.range[1] * this.config.body.height)
+
+		const absYStart = config.range[0] * this.config.body.height
+		const absYEnd = config.range[1] * this.config.body.height
+
+		if (config.topScale == undefined)
+			config.topScale = 1
+		if (config.bottomScale == undefined)
+			config.bottomScale = 1
+		if (config.scaleSmoothing == undefined)
+			config.scaleSmoothing = 0
+		if (config.angle == undefined)
+			config.angle = 0
+		if (config.angleSmoothing == undefined)
+			config.angleSmoothing = 0
+
+		let oppSmoothing = false
+		if (config.scaleSmoothing < 0) {
+			oppSmoothing = true
+			config.scaleSmoothing = Math.abs(config.scaleSmoothing)
+		}
+
+		const halfThickness = config.thickness / 2
+		switch (config.profile) {
+			case "gear":
+				break
+			case "block":
+				profile.push(
+					new BABYLON.Vector3(-halfThickness, 0, 0),
+					new BABYLON.Vector3(halfThickness, 0, 0),
+					new BABYLON.Vector3(halfThickness, config.height, 0),
+					new BABYLON.Vector3(-halfThickness, config.height, 0)
+				)
+				break
+		}
+
+		const tessellations = Math.ceil((end - start) * TESELLATION)
+		const distanceStep = (end - start) / tessellations
+		let currentD = start
+		const path = /** @type {BABYLON.Vector3[]} */ ([])
+		const scale = /** @type {number[]} */ ([])
+		const midSection = this.config.body.height * this.config.body.balance
+		for (let i = 0; i <= tessellations; i++) {
+			const dInfo = this.getProfileInfoAt(currentD)
+			currentD += distanceStep
+			let dScale = 1
+			if (dInfo.y >= midSection) {
+				const ratio = (dInfo.y - midSection) / (absYEnd - midSection)
+				dScale = 1 + (config.topScale - 1) * this._smoothF(ratio, config.scaleSmoothing, oppSmoothing)
+			} else {
+				const ratio = (dInfo.y - midSection) / (absYStart - midSection)
+				dScale = 1 + (config.bottomScale - 1) * this._smoothF(ratio, config.scaleSmoothing, oppSmoothing)
+			}
+			path.push(new BABYLON.Vector3(0, dInfo.y, dInfo.x))
+			scale.push(dScale)
+		}
+
+		const baseMesh = BABYLON.MeshBuilder.ExtrudeShapeCustom("splineBase", {
+			shape: profile,
+			scaleFunction: (i) => scale[i],
+			closeShape: true,
+			path: path,
+			cap: BABYLON.Mesh.CAP_ALL
+		})
+		baseMesh.convertToFlatShadedMesh()
+		arr.push(baseMesh)
+
+		const radialStep = 2 * Math.PI / config.count
+		let currentAngle = 0
+		const verticalAxis = new BABYLON.Vector3(0, 1, 0)
+		const zero = new BABYLON.Vector3(0, 0, 0)
+		for (let i = 1; i < config.count; i++) {
+			currentAngle += radialStep
+			const instance = baseMesh.createInstance(baseMesh.name + i)
+			instance.rotateAround(zero, verticalAxis, currentAngle)
+			arr.push(instance)
+		}
+	}
+
+	/**
+	 * @param {number} distance The linear distance along the profile
+	 * @param {number} [slot] 
+	 * @returns {{angle:number,y:number,x:number}}
+	 */
+	getProfileInfoAt(distance, slot) {
+		if (slot == undefined) {
+			slot = 0
+			while (distance >= this.profileLengthMap[slot])
+				slot++
+			slot--
+			if (slot >= this.profileLengthMap.length - 1)
+				slot = this.profileLengthMap.length - 2
+		}
+
+		const startD = this.profileLengthMap[slot]
+		const endD = this.profileLengthMap[slot + 1]
+
+		const dRatio = (distance - startD) / (endD - startD)
+		const point1 = this.sideProfile[slot]
+		const point2 = this.sideProfile[slot + 1]
+		return {
+			x: ((point2.x - point1.x) * dRatio) + point1.x,
+			y: ((point2.y - point1.y) * dRatio) + point1.y,
+			angle: Math.atan2(point2.y - point1.y, point2.x - point1.x) - Math.PI / 2
+		}
+	}
+
+	/**
+	 * @param {number} y 
+	 * @returns {number}
+	 */
+	getDistanceAtY(y) {
+		let slot = 1
+		while (this.sideProfile[slot] && this.sideProfile[slot].y < y)
+			slot++
+
+		const start = this.sideProfile[slot - 1]
+		const end = this.sideProfile[slot]
+		const distRatio = (y - start.y) / (end.y - start.y)
+		return this.profileLengthMap[slot - 1] +
+			(this.profileLengthMap[slot] - this.profileLengthMap[slot - 1]) * distRatio
 	}
 
 	dispose() {

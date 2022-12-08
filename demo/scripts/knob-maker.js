@@ -73,15 +73,27 @@ const KNOB_CONFIG = {
 		widthStart: 0.25
 	},
 	surface: {
-		knurling: [{
-			sizeX: 1,
-			sizeY: 1,
-			depth: 0.5,
-			radialCount: 50,
-			verticalOffset: 0,
-			rise: 0.9,
+		/* 	knurling: [{
+				sizeX: 1,
+				sizeY: 1,
+				depth: 0.5,
+				radialCount: 50,
+				verticalOffset: 0,
+				rise: 0.9,
+				range: [0, 1],
+				verticalSpacing: 0
+			}], */
+		splines: [{
+			angle: 0,
+			angleSmoothing: 0,
+			bottomScale: 0,
+			count: 35,
+			height: 2.3,
+			profile: "block",
 			range: [0, 1],
-			verticalSpacing: 0
+			scaleSmoothing: 0.4,
+			thickness: 1.03,
+			topScale: 0
 		}]
 	}
 
@@ -120,8 +132,24 @@ const SCHEMA = {
 					"onChange": () => {
 						updateKnob("knurling")
 					}
+				},
+				splines: {
+					"type": "array",
+					"properties": {
+						"profile": {
+							type: "option",
+							"options": ["gear", "block"]
+						},
+						"range": {
+							"type": "range",
+							"min": 0,
+							"max": 1
+						}
+					},
+					onChange: () => {
+						updateKnob("splines")
+					}
 				}
-				//"splines": {}, to be implemented
 			}
 		}
 	}
@@ -169,6 +197,18 @@ const SLIDERS = {
 			verticalOffset: [0, 10],
 			rise: [0.5, 1],
 			shapeRotation: [0, 2 * Math.PI]
+		},
+		splines: {
+			count: [0, 40, 1],
+			thickness: [0.1, 5],
+			topThickness: [0.1, 5],
+			rootThickness: [0.1, 5],
+			height: [0.1, 5],
+			topScale: [0, 1],
+			bottomScale: [0, 1],
+			scaleSmoothing: [0, 1],
+			angle: [-Math.PI / 2, Math.PI / 2],
+			angleSmoothing: [-0.5, 0.5]
 		}
 	}
 }
