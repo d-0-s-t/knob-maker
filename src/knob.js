@@ -28,7 +28,7 @@ import * as BABYLON from "babylonjs"
 import "babylonjs-serializers"
 
 /**
- * @typedef {object} KNOB_BODY_OPTIONS
+ * @typedef {object} KNOB_BODY_CONFIG
  * @property {number} height
  * @property {number} radius
  * @property {number} [topRadius] when not available is equal to radius
@@ -36,50 +36,45 @@ import "babylonjs-serializers"
  * @property {number} [sides]
  * @property {number} [balance] section along the height representative
  *  of the radius. default is 0.5
- */
-
-/**
- * @typedef {object} ONLY_KNOB_BODY
  * @property {number} [smoothing] 0 is linear and 1 is curvy
- * @typedef {KNOB_BODY_OPTIONS & ONLY_KNOB_BODY} KNOB_BODY
  */
 
 /**
- * @typedef {object} KNOB_POINTER
- * @property {number} [height]
- * @property {number} [offset]
+ * @typedef {object} KNOB_POINTER_CONFIG
+ * @property {number} length
+ * @property {number} height
+ * @property {number} [angle]
  * @property {number} [position]
- * @property {number} [rStart]
- * @property {number} [rEnd]
- * @property {number} [widthStart]
- * @property {number} [widthEnd]
+ * @property {number} [radialOffset]
+ * @property {number} [widthStart] In radians
+ * @property {number} [widthEnd] In radian
  */
 
 /**
  * @typedef {object} ONLY_KNOB_SLOT
  * @property {number} [balance] same as body options but defaults to one
- * @property {number} [offset]
- * @property {number} [flatWidth]
- * @property {number} [doubleD] boolean
- * @typedef {KNOB_BODY_OPTIONS & ONLY_KNOB_SLOT} KNOB_SLOT
+ * @property {number} [angle]
+ * @property {SPLINE_CONFIG[]} [splines]
+ * @typedef {KNOB_BODY_CONFIG & ONLY_KNOB_SLOT} KNOB_HOLE_CONFIG
  */
 
 /**
  * @typedef {object} KNOB_CONFIG
- * @property {KNOB_BODY} body
- * @property {KNOB_POINTER} [pointer]
- * @property {KNOB_SLOT} [screwHole]
+ * @property {KNOB_BODY_CONFIG} body
+ * @property {KNOB_POINTER_CONFIG} [pointer]
+ * @property {KNOB_HOLE_CONFIG} [screwHole]
  * @property {SURFACE_CONFIG} [surface]
  */
 
 /**
  * @typedef {object} SURFACE_CONFIG
  * @property {KNURLING_CONFIG[]} [knurling]
- * @property {SPLINE[]} [splines]
+ * @property {SPLINE_CONFIG[]} [splines]
  */
 
 /**
  * @typedef {object} KNURLING_CONFIG
+ * @property {"pyramid"|"rectangle"|"cylinder"|"cone"|"triangle"} [shape]
  * @property {number} sizeX
  * @property {number} sizeY
  * @property {number} depth
@@ -89,18 +84,17 @@ import "babylonjs-serializers"
  * @property {number} [rise]
  * @property {number[]} [range]
  * @property {number} [shapeRotation]
- * @property {"pyramid"|"rectangle"|"cylinder"|"cone"|"triangle"} [shape] Not implemented. Defaults to pyramid
+ * @property {number} [scaleSmoothing]
  */
 
 /**
- * @typedef {object} SPLINE
+ * @typedef {object} SPLINE_CONFIG
  * @property {number} count
  * @property {number[]} range
- * @property {"gear"|"block"} profile The shape of the tooth
  * @property {number} height the height of the tooth radially.
  * @property {number} thickness
- * @property {number} [tipThichness]
- * @property {number} [rootThichness]
+ * @property {number} [rootThickness]
+ * @property {number} [smoothing]
  * @property {number} [topScale=1]
  * @property {number} [bottomScale=1]
  * @property {number} [scaleSmoothing=0]
@@ -124,60 +118,38 @@ export class KNOB {
 	 * Meshes will be transuncent to see through. This is mainly for performance reasons
 	 */
 	constructor(config, scene, draftMode) {
-		this.fillDefaults(config)
+		/** @type {KNOB_CONFIG} */
+		this.config = JSON.parse(JSON.stringify(config))
 		this.scene = scene
 		this.knurlingMeshes = /** @type {Mesh[]} */ ([])
-		this.splines = /** @type {Mesh[]} */ ([])
+		this.surfaceSplines = /** @type {Mesh[]} */ ([])
+		this.screwHoleSplines = /** @type {Mesh[]} */ ([])
 		this.update(config)
 	}
 
 	/**
-	 * @param {KNOB_CONFIG} config
+	 * @param {KNOB_BODY_CONFIG|KNOB_HOLE_CONFIG} bodyConfig 
 	 */
-	fillDefaults(config) {
-		/** @type {KNOB_CONFIG} */
-		this.config = JSON.parse(JSON.stringify(config))
-
-		/**
-		 * @param {KNOB_BODY_OPTIONS} bodyConfig 
-		 */
-		function fillDefaultsOnBody(bodyConfig) {
-			if (bodyConfig.bottomRadius == undefined)
-				bodyConfig.bottomRadius = bodyConfig.radius
-			if (bodyConfig.topRadius == undefined)
-				bodyConfig.topRadius = bodyConfig.radius
-			if (bodyConfig.sides < 3)
-				delete bodyConfig.sides
-		}
-		if (this.config.body.balance == undefined)
-			this.config.body.balance = 0.5
-
-		fillDefaultsOnBody(this.config.body)
-		if ("screwHole" in this.config) {
-			fillDefaultsOnBody(this.config.screwHole)
-			if (this.config.screwHole.balance == undefined)
-				this.config.screwHole.balance = 1
-			if (this.config.screwHole.bottomRadius == undefined)
-				this.config.screwHole.bottomRadius = this.config.screwHole.radius
-			if (this.config.screwHole.flatWidth == undefined)
-				this.config.screwHole.flatWidth = 0
-			if (this.config.screwHole.offset == undefined)
-				this.config.screwHole.offset = 0
-		}
-
-		if ("pointer" in this.config) {
-			if (this.config.pointer.offset == undefined)
-				this.config.pointer.offset = 0
-		}
+	_fillDefaultsOnBody(bodyConfig) {
+		if (bodyConfig.bottomRadius == undefined)
+			bodyConfig.bottomRadius = bodyConfig.radius
+		if (bodyConfig.topRadius == undefined)
+			bodyConfig.topRadius = bodyConfig.radius
+		if (bodyConfig.sides < 3)
+			delete bodyConfig.sides
 	}
+
 	/**
 	 * @param {KNOB_CONFIG} config
-	 * @param {(keyof KNOB_CONFIG|"knurling"|"splines")[]} [partsToUpdate] 
+	 * @param {(keyof KNOB_CONFIG|"knurling"|"splines"|"internalSplines"|"threads")[]} [partsToUpdate] 
 	 */
 	update(config, partsToUpdate) {
-		if (!partsToUpdate || partsToUpdate.length == 0) {
-			partsToUpdate = ["body", "pointer", "screwHole", "knurling"]
-		}
+		if (!partsToUpdate || partsToUpdate.length == 0)
+			partsToUpdate = [
+				"body", "pointer", "screwHole",
+				"knurling", "splines", "threads"
+			]
+
 
 		if (partsToUpdate.indexOf("pointer") + 1) {
 			this.pointerShape && this.pointerShape.dispose()
@@ -185,25 +157,27 @@ export class KNOB {
 			this.pointerShape = this._createPointer(this.config.pointer)
 		}
 
-		let bodyUpdated = false
 		if (partsToUpdate.indexOf("body") + 1) {
 			this.baseShape && this.baseShape.dispose()
 			Object.assign(this.config.body, config.body)
 			this.baseShape = this._createBody(this.config.body)
-			bodyUpdated = true
 			partsToUpdate.push("surface")
+			partsToUpdate.push("screwHole")
 		}
 		if (partsToUpdate.indexOf("screwHole") + 1) {
 			Object.assign(this.config.screwHole, config.screwHole)
 			const tempShape = this._createScrewHole(this.config.screwHole)
 			this.screwHoleShape && this.screwHoleShape.dispose()
 			this.screwHoleShape = tempShape
-			bodyUpdated = true
-			this.dBlockShape && this.dBlockShape.dispose()
-			if (this.config.screwHole.flatWidth) {
-				this.dBlockShape = this._createFlatSection(this.config.screwHole)
+			this.bodyShape && this.bodyShape.dispose()
+			this.bodyShape = this._performSubstractiveCSG(this.baseShape, this.screwHoleShape, "combined")
+			partsToUpdate.push("internalSplines")
+		}
 
-			}
+		if (partsToUpdate.indexOf("internalSplines") + 1) {
+			this.screwHoleSplines.forEach(m => m.dispose())
+			this.config.screwHole.splines = JSON.parse(JSON.stringify(config.screwHole.splines))
+			this.screwHoleSplines = this._createSplinesGroupOn(this.screwHoleProfile, this.config.screwHole.splines)
 		}
 
 		if (partsToUpdate.indexOf("surface") + 1) {
@@ -218,53 +192,29 @@ export class KNOB {
 		}
 
 		if (partsToUpdate.indexOf("splines") + 1) {
-			this.splines.forEach(mesh => mesh.dispose())
+			this.surfaceSplines.forEach(mesh => mesh.dispose())
 			this.config.surface.splines = JSON.parse(JSON.stringify(config.surface.splines))
-			this.splines = this._createSplinesGroup(this.config.surface.splines)
+			this.surfaceSplines = this._createSplinesGroupOn(this.bodyProfile, this.config.surface.splines)
 		}
 
-		if (bodyUpdated) {
-			if (this.baseShape && this.screwHoleShape) {
-				this.bodyShape && this.bodyShape.dispose()
-				this.bodyShape = this._performSubstractiveCSG(this.baseShape, this.screwHoleShape, "combined")
-			} else {
-				this.bodyShape = this.baseShape
-			}
-		}
+		if (!this.bodyShape)
+			this.bodyShape = this.baseShape
 	}
 
 	/**
 	 * Knob is a combination of body, lips and internal stucture
 	 * First create the shape that will make a body
-	 * @param {KNOB_BODY} bodyConfig
+	 * @param {KNOB_BODY_CONFIG} bodyConfig
 	 * @returns {BABYLON.Mesh}
 	 */
 	_createBody(bodyConfig) {
-		const shape = /** @type {BABYLON.Vector3[]} */ ([])
-		if (!bodyConfig.smoothing) {
-			shape.push(...this._createLinearShape(bodyConfig))
-		} else {
-			const y1 = bodyConfig.height * bodyConfig.balance
-			//bottom Section
-			const startPoint = new BABYLON.Vector3(bodyConfig.bottomRadius, 0, 0)
-			const midPoint = new BABYLON.Vector3(bodyConfig.radius, y1, 0)
-			const endPoint = new BABYLON.Vector3(bodyConfig.topRadius, bodyConfig.height, 0)
-			const phase1 = this._tessellatePath(startPoint, midPoint, bodyConfig.smoothing, true)
-			phase1.pop()
-			shape.push(new BABYLON.Vector3(0, 0, 0))
-			shape.push(...phase1)
-			shape.push(...this._tessellatePath(midPoint, endPoint, bodyConfig.smoothing))
-			shape.push(new BABYLON.Vector3(0, bodyConfig.height, 0))
-		}
-		this.profileLengthMap = [0]
-		this.sideProfile = shape.filter((v, i) => !(i == 0 || i == shape.length - 1))
-		let distance = 0
-		for (let i = 2; i < shape.length - 1; i++) {
-			distance += BABYLON.Vector3.Distance(shape[i], shape[i - 1])
-			this.profileLengthMap.push(distance)
-		}
+		this._fillDefaultsOnBody(bodyConfig)
+		if (bodyConfig.balance == undefined)
+			bodyConfig.balance = 0.5
+
+		this.bodyProfile = new Profile(bodyConfig)
 		return BABYLON.MeshBuilder.CreateLathe("baseShape", {
-			shape: shape,
+			shape: this.bodyProfile.shape,
 			radius: 0,
 			tessellation: bodyConfig.sides > 2 ? bodyConfig.sides : null,
 			closed: true
@@ -272,69 +222,31 @@ export class KNOB {
 	}
 
 	/**
-	 * @param {KNOB_SLOT} screwHoleConfig 
+	 * @param {KNOB_HOLE_CONFIG} screwHoleConfig 
 	 * @returns {BABYLON.Mesh}
 	 */
 	_createScrewHole(screwHoleConfig) {
 		if (screwHoleConfig && screwHoleConfig.height && screwHoleConfig.bottomRadius) {
+			this._fillDefaultsOnBody(screwHoleConfig)
+			if (screwHoleConfig.balance == undefined)
+				screwHoleConfig.balance = 1
+			if (screwHoleConfig.angle == undefined)
+				screwHoleConfig.angle = 0
+
+			this.screwHoleProfile = new Profile(screwHoleConfig)
 			const mesh = BABYLON.MeshBuilder.CreateLathe("screwHoleShape", {
-				shape: this._createLinearShape(this.config.screwHole),
+				shape: this.screwHoleProfile.shape,
 				radius: 0,
 				tessellation: this.config.screwHole.sides > 2 ?
 					this.config.screwHole.sides : null,
 				closed: true,
 			})
-			if (screwHoleConfig.offset)
+			if (screwHoleConfig.angle)
 				mesh.rotateAround(new BABYLON.Vector3(0, 0, 0),
-					new BABYLON.Vector3(0, 1, 0), screwHoleConfig.offset)
+					new BABYLON.Vector3(0, 1, 0), screwHoleConfig.angle)
 			return mesh
 		}
 		return null
-	}
-
-	/**
-	 * 
-	 * @param {KNOB_SLOT} screwHoleConfig 
-	 * @returns {BABYLON.Mesh}
-	 */
-	_createFlatSection(screwHoleConfig) {
-		const radius = screwHoleConfig.bottomRadius
-		let halfWidth = screwHoleConfig.flatWidth / 2
-		halfWidth = Math.min(radius, halfWidth)
-		let theta = Math.PI / 2 - Math.asin(halfWidth / radius)
-		const theta2 = Math.PI - theta
-
-		const arcTessellations = 20
-		const thetaStep = (theta2 - theta) / arcTessellations
-		const points = []
-		const radiusOffset = Math.sqrt(radius * radius - halfWidth * halfWidth)
-		const centerPoint = new BABYLON.Vector3(0, radiusOffset, 0)
-		const direction = new BABYLON.Vector3(0, 0, 0)
-		for (let i = 0; i <= arcTessellations; i++) {
-			const x = Math.cos(theta)
-			const y = Math.sin(theta)
-			const point = new BABYLON.Vector3(x, y, 0).scaleInPlace(radius)
-			//this so that there is not gap between the block and inner-radius
-			point.addInPlace(direction.copyFrom(point).subtractInPlace(centerPoint).normalizeToRef(direction)
-				.scaleInPlace(1))
-			points.push(point)
-			theta += thetaStep
-		}
-
-		points.push(points[0].clone())
-		const extrudeLength = screwHoleConfig.balance * screwHoleConfig.height
-		const mesh1 = BABYLON.MeshBuilder.ExtrudeShape("dBlockShape", {
-			shape: points,
-			path: [new BABYLON.Vector3(0, 0, 0), new BABYLON.Vector3(0, extrudeLength, 0)],
-			cap: BABYLON.Mesh.CAP_ALL
-		})
-		mesh1.rotation.y = screwHoleConfig.offset
-		if (screwHoleConfig.doubleD) {
-			const mesh2 = mesh1.clone("dBlockShape2")
-			mesh2.rotation.y += Math.PI
-			return BABYLON.Mesh.MergeMeshes([mesh1, mesh2], true)
-		} else
-			return mesh1
 	}
 
 	/**
@@ -356,78 +268,29 @@ export class KNOB {
 	}
 
 	/**
-	 * @param {BABYLON.Vector3} startPoint 
-	 * @param {BABYLON.Vector3} endPoint 
-	 * @param {number} smoothing
-	 * @param {boolean} [opposite]
-	 * @returns {BABYLON.Vector3[]}
-	 */
-	_tessellatePath(startPoint, endPoint, smoothing, opposite) {
-		const path = /** @type {BABYLON.Vector3[]} */ ([])
-		const distance = BABYLON.Vector3.Distance(startPoint, endPoint)
-		const subDivisions = Math.round(distance * TESELLATION)
-		let yPos = startPoint.y
-		const yIncrement = (endPoint.y - startPoint.y) / subDivisions
-		const xDiff = endPoint.x - startPoint.x
-		let position = 0
-		const step = 1 / subDivisions
-		for (let i = 0; i <= subDivisions; i++) {
-			const point = new BABYLON.Vector3(0, 0, 0)
-			point.x = startPoint.x + (xDiff * this._smoothF(position, smoothing, opposite))
-			point.y = yPos
-			yPos += yIncrement
-			path.push(point)
-			position += step
-		}
-		return path
-	}
-
-	/**
-	 * @param {number} pos
-	 * @param {number} smoothing 
-	 * @param {boolean} [oppDir] 
-	 * @returns {number}
-	 */
-	_smoothF(pos, smoothing, oppDir) {
-		const factor = 1 + (smoothing * 2)
-		return oppDir ? 1 - Math.pow(1 - pos, factor) : Math.pow(pos, factor)
-	}
-
-	/**
-	 * @param {KNOB_BODY_OPTIONS} config 
-	 * @returns {BABYLON.Vector3[]}
-	 */
-	_createLinearShape(config) {
-		return [
-			new BABYLON.Vector3(0, 0, 0),
-			new BABYLON.Vector3(config.bottomRadius, 0, 0),
-			new BABYLON.Vector3(config.radius, config.height * config.balance, 0),
-			new BABYLON.Vector3(config.topRadius, config.height, 0),
-			new BABYLON.Vector3(0, config.height, 0)
-		]
-	}
-
-	/**
-	 * @param {KNOB_POINTER} config 
+	 * @param {KNOB_POINTER_CONFIG} config 
 	 * @returns {BABYLON.Mesh}
 	 */
 	_createPointer(config) {
 		if (!config || !config.height)
 			return null
 
-		/**
-		 * @param {number} angle 
-		 * @param {number} radius 
-		 * @returns {BABYLON.Vector3}
-		 */
-		function getPointAt(angle, radius) {
-			return new BABYLON.Vector3(Math.cos(angle) * radius, Math.sin(angle) * radius, 0)
-		}
+		if (config.angle == undefined)
+			config.angle = 0
+		if (config.radialOffset == undefined)
+			config.radialOffset = 0
+		if (config.position == undefined)
+			config.position = 0
+		if (config.widthEnd == undefined)
+			config.widthEnd = 0
+		if (config.widthStart == undefined)
+			config.widthStart = Math.PI / 10
 
-		const p1 = getPointAt(config.offset + config.widthStart / 2, config.rStart)
-		const p2 = getPointAt(config.offset - config.widthStart / 2, config.rStart)
-		const p3 = getPointAt(config.offset - config.widthEnd / 2, config.rEnd)
-		const p4 = getPointAt(config.offset + config.widthEnd / 2, config.rEnd)
+		const p1 = getPointAt(config.angle - config.widthStart / 2, config.radialOffset)
+		const p2 = getPointAt(config.angle + config.widthStart / 2, config.radialOffset)
+		const p3 = getPointAt(config.angle + config.widthEnd / 2, config.radialOffset + config.length)
+		const p4 = getPointAt(config.angle - config.widthEnd / 2, config.radialOffset + config.length)
+
 		const y = (this.config.body.height * config.position) - (config.height / 2)
 
 		return BABYLON.MeshBuilder.ExtrudeShape("knobPointer", {
@@ -436,7 +299,6 @@ export class KNOB {
 				new BABYLON.Vector3(0, y, 0),
 				new BABYLON.Vector3(0, y + config.height, 0)
 			],
-			closePath: true,
 			cap: BABYLON.Mesh.CAP_ALL
 		})
 	}
@@ -463,6 +325,13 @@ export class KNOB {
 		let baseMesh
 		if (!config.shape)
 			config.shape = "pyramid"
+		if (config.verticalOffset == undefined)
+			config.verticalOffset = 0
+		if (config.verticalSpacing == undefined)
+			config.verticalSpacing = 0
+		if (config.rise == undefined)
+			config.rise = 0.9
+
 		const halfY = config.sizeY / 2
 		switch (config.shape) {
 			case "cone":
@@ -569,13 +438,13 @@ export class KNOB {
 		} else {
 			const slopeHeightMap = /** @type {{angle:number,y:number,x:number}[]} */ ([])
 			let slot = 0
-			let yPos = this.getDistanceAtY(this.config.body.height * config.range[0]) + halfY
-			const yPosLimit = this.getDistanceAtY(this.config.body.height * config.range[1]) - halfY
+			let yPos = this.bodyProfile.getDistanceAt(config.range[0]) + halfY
+			const yPosLimit = this.bodyProfile.getDistanceAt(config.range[1]) - halfY
 			while (yPos < yPosLimit) {
-				while (yPos > this.profileLengthMap[slot]) {
+				while (yPos > this.bodyProfile.lengthMap[slot]) {
 					slot++
 				}
-				slopeHeightMap.push(this.getProfileInfoAt(yPos, slot - 1))
+				slopeHeightMap.push(this.bodyProfile.getInfoAt(yPos, slot - 1))
 				yPos += yDist
 			}
 			for (let j = 0; j < config.radialCount; j++) {
@@ -606,27 +475,28 @@ export class KNOB {
 	}
 
 	/**
-	 * @param {SPLINE[]} config
+	 * @param {Profile} profile
+	 * @param {SPLINE_CONFIG[]} config
 	 * @returns {(BABYLON.Mesh|BABYLON.InstancedMesh)[]}
 	 */
-	_createSplinesGroup(config) {
+	_createSplinesGroupOn(profile, config) {
 		const array = /** @type {BABYLON.Mesh[]} */ ([])
 		const _this = this
-		config.forEach(c => _this._createSpline(c, array))
+		config.forEach(c => _this._createSplineOn(profile, c, array))
 		return array
 	}
 
 	/**
-	 * @param {SPLINE} config
+	 * @param {Profile} profile
+	 * @param {SPLINE_CONFIG} config
 	 * @param {(BABYLON.Mesh|BABYLON.InstancedMesh)[]} arr
 	 */
-	_createSpline(config, arr) {
-		if (config.count < 1)
+	_createSplineOn(profile, config, arr) {
+		if (config.count < 1 || !config.height)
 			return
 
-		const profile = /** (@BABYLON.Vector3) */ ([])
-		const start = this.getDistanceAtY(config.range[0] * this.config.body.height)
-		const end = this.getDistanceAtY(config.range[1] * this.config.body.height)
+		const start = profile.getDistanceAt(config.range[0])
+		const end = profile.getDistanceAt(config.range[1])
 
 		const absYStart = config.range[0] * this.config.body.height
 		const absYEnd = config.range[1] * this.config.body.height
@@ -641,54 +511,56 @@ export class KNOB {
 			config.angle = 0
 		if (config.angleSmoothing == undefined)
 			config.angleSmoothing = 0
+		if (config.rootThickness == undefined)
+			config.rootThickness = config.thickness
 
-		let oppSmoothing = false
-		if (config.scaleSmoothing < 0) {
-			oppSmoothing = true
-			config.scaleSmoothing = Math.abs(config.scaleSmoothing)
-		}
-
-		const halfThickness = config.thickness / 2
-		switch (config.profile) {
-			case "gear":
-				break
-			case "block":
-				profile.push(
-					new BABYLON.Vector3(-halfThickness, 0, 0),
-					new BABYLON.Vector3(halfThickness, 0, 0),
-					new BABYLON.Vector3(halfThickness, config.height, 0),
-					new BABYLON.Vector3(-halfThickness, config.height, 0)
-				)
-				break
-		}
+		let oppSmoothing = config.scaleSmoothing < 0
+		config.scaleSmoothing = Math.abs(config.scaleSmoothing)
+		let oppAngleSmoothing = config.angleSmoothing < 0
+		config.angleSmoothing = Math.abs(config.angleSmoothing)
 
 		const tessellations = Math.ceil((end - start) * TESELLATION)
 		const distanceStep = (end - start) / tessellations
 		let currentD = start
-		const path = /** @type {BABYLON.Vector3[]} */ ([])
-		const scale = /** @type {number[]} */ ([])
 		const midSection = this.config.body.height * this.config.body.balance
+		const paths = []
+		const angleStep = Math.abs(config.angle / tessellations)
+		let pathRotation = 0
 		for (let i = 0; i <= tessellations; i++) {
-			const dInfo = this.getProfileInfoAt(currentD)
-			currentD += distanceStep
+			const dInfo = profile.getInfoAt(currentD)
 			let dScale = 1
 			if (dInfo.y >= midSection) {
 				const ratio = (dInfo.y - midSection) / (absYEnd - midSection)
-				dScale = 1 + (config.topScale - 1) * this._smoothF(ratio, config.scaleSmoothing, oppSmoothing)
+				dScale = 1 + (config.topScale - 1) * smooth(ratio, config.scaleSmoothing, oppSmoothing)
 			} else {
 				const ratio = (dInfo.y - midSection) / (absYStart - midSection)
-				dScale = 1 + (config.bottomScale - 1) * this._smoothF(ratio, config.scaleSmoothing, oppSmoothing)
+				dScale = 1 + (config.bottomScale - 1) * smooth(ratio, config.scaleSmoothing, oppSmoothing)
 			}
-			path.push(new BABYLON.Vector3(0, dInfo.y, dInfo.x))
-			scale.push(dScale)
+			currentD += distanceStep
+
+			const currentAngle = config.angle * smooth(pathRotation,
+				config.angleSmoothing,
+				oppAngleSmoothing)
+			pathRotation += angleStep
+
+			paths[i + 1] = this._createSplineProfile(
+				config.rootThickness * dScale,
+				config.thickness * dScale,
+				config.height * dScale,
+				dInfo.x,
+				config.smoothing,
+				dInfo.y,
+				currentAngle
+			)
 		}
 
-		const baseMesh = BABYLON.MeshBuilder.ExtrudeShapeCustom("splineBase", {
-			shape: profile,
-			scaleFunction: (i) => scale[i],
-			closeShape: true,
-			path: path,
-			cap: BABYLON.Mesh.CAP_ALL
+		paths[0] = centerArr(paths[1])
+		paths.push(centerArr(paths[paths.length - 1]))
+
+		const baseMesh = BABYLON.MeshBuilder.CreateRibbon("baseSpline", {
+			pathArray: paths,
+			sideOrientation: config.height > 0 ?
+				BABYLON.Mesh.BACKSIDE : null
 		})
 		baseMesh.convertToFlatShadedMesh()
 		arr.push(baseMesh)
@@ -706,54 +578,83 @@ export class KNOB {
 	}
 
 	/**
-	 * @param {number} distance The linear distance along the profile
-	 * @param {number} [slot] 
-	 * @returns {{angle:number,y:number,x:number}}
+	 * @param {number} rb this is in radians thickness at base
+	 * @param {number} rt this is in radians thickness at tip
+	 * @param {number} h 
+	 * @param {number} r radius of the circle at the balance point
+	 * @param {number} s smoothing factor
+	 * @param {number} [hPos]
+	 * @param {number} [offset]
+	 * @returns {BABYLON.Vector3[]}
 	 */
-	getProfileInfoAt(distance, slot) {
-		if (slot == undefined) {
-			slot = 0
-			while (distance >= this.profileLengthMap[slot])
-				slot++
-			slot--
-			if (slot >= this.profileLengthMap.length - 1)
-				slot = this.profileLengthMap.length - 2
+	_createSplineProfile(rb, rt, h, r, s, hPos = 0, offset = 0) {
+		/** 3 every mm */
+		//const tessellations = 3
+		const profile = /** @type {BABYLON.Vector3[]} */ ([])
+
+		/**
+		 * @param {number} angle 
+		 * @param {number} r 
+		 * @returns {BABYLON.Vector3}
+		 */
+		function getPointAtMod(angle, r) {
+			const p = getPointAt(angle, r)
+			p.z = p.y
+			p.y = hPos
+			return p
 		}
 
-		const startD = this.profileLengthMap[slot]
-		const endD = this.profileLengthMap[slot + 1]
-
-		const dRatio = (distance - startD) / (endD - startD)
-		const point1 = this.sideProfile[slot]
-		const point2 = this.sideProfile[slot + 1]
-		return {
-			x: ((point2.x - point1.x) * dRatio) + point1.x,
-			y: ((point2.y - point1.y) * dRatio) + point1.y,
-			angle: Math.atan2(point2.y - point1.y, point2.x - point1.x) - Math.PI / 2
+		const numBasePoints = 18 //Math.round(r * rb * tessellations)
+		let arcStep = rb / numBasePoints
+		let currentStep = -rb / 2 + offset
+		for (let i = 0; i <= numBasePoints; i++) {
+			profile.push(getPointAtMod(currentStep, r))
+			currentStep += arcStep
 		}
-	}
 
-	/**
-	 * @param {number} y 
-	 * @returns {number}
-	 */
-	getDistanceAtY(y) {
-		let slot = 1
-		while (this.sideProfile[slot] && this.sideProfile[slot].y < y)
-			slot++
+		const numSidePoints = 18 //Math.round(r * (Math.abs(rt - rb) / 2) * tessellations)
+		arcStep = (rt - rb) / (2 * numSidePoints)
+		currentStep = (rb / 2) + offset
+		let currentHeight = 0
+		const heightStep = h / numSidePoints
+		const oppDir = s > 0 ? false : true
+		s = Math.abs(s) || 0
+		for (let i = 0; i < numSidePoints - 1; i++) {
+			currentStep += arcStep
+			currentHeight += heightStep
+			const ch = h * smooth(currentHeight / h, s, oppDir)
+			profile.push(getPointAtMod(currentStep, r + ch))
+		}
 
-		const start = this.sideProfile[slot - 1]
-		const end = this.sideProfile[slot]
-		const distRatio = (y - start.y) / (end.y - start.y)
-		return this.profileLengthMap[slot - 1] +
-			(this.profileLengthMap[slot] - this.profileLengthMap[slot - 1]) * distRatio
+		const numTipPoints = 18 //Math.round((r + h) * rt * tessellations)
+		arcStep = -rt / numTipPoints
+		currentStep = (rt / 2) + offset
+		for (let i = 0; i <= numTipPoints; i++) {
+			profile.push(getPointAtMod(currentStep, r + h))
+			currentStep += arcStep
+		}
+
+		arcStep = -(rt - rb) / (2 * numSidePoints)
+		currentStep = -(rt / 2) + offset
+		currentHeight = h
+		for (let i = 0; i < numSidePoints - 1; i++) {
+			currentStep -= arcStep
+			currentHeight -= heightStep
+			const ch = h * smooth(currentHeight / h, s, oppDir)
+			profile.push(getPointAtMod(currentStep, r + ch))
+		}
+
+		profile.push(profile[0].clone())
+		return profile
 	}
 
 	dispose() {
 		this.baseShape.dispose()
 		this.screwHoleShape && this.screwHoleShape.dispose()
 		this.bodyShape.dispose()
-		this.dBlockShape && this.dBlockShape.dispose()
+		this.surfaceSplines.forEach(mesh => mesh.dispose())
+		this.screwHoleSplines.forEach(mesh => mesh.dispose())
+		this.knurlingMeshes.forEach(mesh => mesh.dispose())
 		this.pointerShape && this.pointerShape.dispose()
 	}
 
@@ -774,4 +675,157 @@ function copyRotation(targetMesh, sourceMesh) {
 			targetMesh.rotationQuaternion = new BABYLON.Quaternion(0, 0, 0, 1)
 		targetMesh.rotationQuaternion.copyFrom(sourceMesh.rotationQuaternion)
 	}
+}
+
+/**
+ * @param {number} angle 
+ * @param {number} radius 
+ * @returns {BABYLON.Vector3}
+ */
+function getPointAt(angle, radius) {
+	return new BABYLON.Vector3(Math.sin(angle) * radius, Math.cos(angle) * radius, 0)
+}
+
+/**
+ * @param {BABYLON.Vector3[]} arr 
+ * @returns {BABYLON.Vector3[]}
+ */
+function centerArr(arr) {
+	let newArr = []
+	let barycenter = new BABYLON.Vector3(0, 0, 0)
+	let i
+	for (i = 0; i < arr.length; i++) {
+		barycenter.addInPlace(arr[i])
+	}
+	barycenter.scaleInPlace(1.0 / arr.length)
+	for (i = 0; i < arr.length; i++) {
+		newArr.push(barycenter)
+	}
+	return newArr
+}
+
+class Profile {
+	/**
+	 * 
+	 * @param {KNOB_BODY_CONFIG} config 
+	 */
+	constructor(config) {
+		this.shape = /** @type {BABYLON.Vector3[]} */ ([])
+		if (!config.smoothing) {
+			this.shape.push(
+				new BABYLON.Vector3(0, 0, 0),
+				new BABYLON.Vector3(config.bottomRadius, 0, 0),
+				new BABYLON.Vector3(config.radius, config.height * config.balance, 0),
+				new BABYLON.Vector3(config.topRadius, config.height, 0),
+				new BABYLON.Vector3(0, config.height, 0)
+			)
+		} else {
+			const y1 = config.height * config.balance
+			//bottom Section
+			const startPoint = new BABYLON.Vector3(config.bottomRadius, 0, 0)
+			const midPoint = new BABYLON.Vector3(config.radius, y1, 0)
+			const endPoint = new BABYLON.Vector3(config.topRadius, config.height, 0)
+			const phase1 = this._tessellatePath(startPoint, midPoint, config.smoothing, true)
+			phase1.pop()
+			this.shape.push(new BABYLON.Vector3(0, 0, 0))
+			this.shape.push(...phase1)
+			this.shape.push(...this._tessellatePath(midPoint, endPoint, config.smoothing))
+			this.shape.push(new BABYLON.Vector3(0, config.height, 0))
+		}
+		this.lengthMap = [0]
+		this.side = this.shape.filter((v, i) => !(i == 0 || i == this.shape.length - 1))
+		let distance = 0
+		for (let i = 2; i < this.shape.length - 1; i++) {
+			distance += BABYLON.Vector3.Distance(this.shape[i], this.shape[i - 1])
+			this.lengthMap.push(distance)
+		}
+	}
+
+	/**
+	 * @param {BABYLON.Vector3} startPoint 
+	 * @param {BABYLON.Vector3} endPoint 
+	 * @param {number} smoothing
+	 * @param {boolean} [opposite]
+	 * @returns {BABYLON.Vector3[]}
+	 */
+	_tessellatePath(startPoint, endPoint, smoothing, opposite) {
+		const path = /** @type {BABYLON.Vector3[]} */ ([])
+		const distance = BABYLON.Vector3.Distance(startPoint, endPoint)
+		const subDivisions = Math.round(distance * TESELLATION)
+		let yPos = startPoint.y
+		const yIncrement = (endPoint.y - startPoint.y) / subDivisions
+		const xDiff = endPoint.x - startPoint.x
+		let position = 0
+		const step = 1 / subDivisions
+		for (let i = 0; i <= subDivisions; i++) {
+			const point = new BABYLON.Vector3(0, 0, 0)
+			point.x = startPoint.x + (xDiff * smooth(position, smoothing, opposite))
+			point.y = yPos
+			yPos += yIncrement
+			path.push(point)
+			position += step
+		}
+		return path
+	}
+
+	/**
+	 * Returns position and slope at a given distance from the base of the profile.
+	 * The distance is measurea along the profile surface
+	 * @param {number} distance The linear distance along the profile
+	 * @param {number} [slot] 
+	 * @returns {{angle:number,y:number,x:number}}
+	 */
+	getInfoAt(distance, slot) {
+		if (slot == undefined) {
+			slot = 0
+			while (distance >= this.lengthMap[slot])
+				slot++
+			slot--
+			if (slot >= this.lengthMap.length - 1)
+				slot = this.lengthMap.length - 2
+		}
+
+		const startD = this.lengthMap[slot]
+		const endD = this.lengthMap[slot + 1]
+
+		const dRatio = (distance - startD) / (endD - startD)
+		const point1 = this.side[slot]
+		const point2 = this.side[slot + 1]
+		return {
+			x: ((point2.x - point1.x) * dRatio) + point1.x,
+			y: ((point2.y - point1.y) * dRatio) + point1.y,
+			angle: Math.atan2(point2.y - point1.y, point2.x - point1.x) - Math.PI / 2
+		}
+	}
+
+	/**
+	 * @param {number} y The ratio along the height of the profile
+	 * @returns {number}
+	 */
+	getDistanceAt(y) {
+		let slot = 1
+		const height = y * this.side[this.side.length - 1].y
+		while (this.side[slot] && this.side[slot].y < height)
+			slot++
+
+		if (slot >= this.side.length)
+			slot = this.side.length - 1
+
+		const start = this.side[slot - 1]
+		const end = this.side[slot]
+		const distRatio = (height - start.y) / (end.y - start.y)
+		return this.lengthMap[slot - 1] +
+			(this.lengthMap[slot] - this.lengthMap[slot - 1]) * distRatio
+	}
+}
+
+/**
+ * @param {number} value
+ * @param {number} smoothing 
+ * @param {boolean} [oppDir] 
+ * @returns {number}
+ */
+function smooth(value, smoothing, oppDir) {
+	const factor = 1 + (smoothing * 2)
+	return oppDir ? 1 - Math.pow(1 - value, factor) : Math.pow(value, factor)
 }

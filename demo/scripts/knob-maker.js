@@ -37,7 +37,7 @@ import { KNOB } from "./knob.js"
 const canvas = document.querySelector("#mainCanvas")
 const engine = new BABYLON.Engine(canvas)
 const scene = new BABYLON.Scene(engine)
-const camera = new BABYLON.ArcRotateCamera("mainCamera", 0, Math.PI / 3, 50,
+const camera = new BABYLON.ArcRotateCamera("mainCamera", 0, Math.PI / 3, 100,
 	new BABYLON.Vector3(0, 0, 0),
 	scene
 )
@@ -46,55 +46,56 @@ const camera = new BABYLON.ArcRotateCamera("mainCamera", 0, Math.PI / 3, 50,
 /** @type {import("./knob.js").KNOB_CONFIG} */
 const KNOB_CONFIG = {
 	body: {
-		balance: 0.5,
-		bottomRadius: 15,
-		height: 30,
+		// topRadius: 5,
+		// bottomRadius: 15,
+		topRadius: 10,
+		bottomRadius: 10,
 		radius: 10,
+		height: 30,
 		sides: 0,
 		smoothing: 0,
-		topRadius: 5,
+		balance: 0.5
 	},
 	screwHole: {
 		balance: 1,
 		bottomRadius: 5,
-		flatWidth: 5,
 		height: 8,
-		offset: 0,
+		angle: 0,
 		radius: 5,
 		topRadius: 5
 	},
 	pointer: {
 		height: 15,
-		offset: 0,
+		radialOffset: 10,
 		position: 0.75,
-		rEnd: 10,
-		rStart: 5,
+		length: 2,
+		angle: 0,
 		widthEnd: 0.02,
 		widthStart: 0.25
 	},
 	surface: {
-		/* 	knurling: [{
-				sizeX: 1,
-				sizeY: 1,
-				depth: 0.5,
-				radialCount: 50,
-				verticalOffset: 0,
-				rise: 0.9,
-				range: [0, 1],
-				verticalSpacing: 0
-			}], */
-		splines: [{
+		knurling: [{
+			sizeX: 1,
+			sizeY: 1,
+			depth: 0.5,
+			radialCount: 50,
+			verticalOffset: 0,
+			rise: 0.9,
+			range: [0, 1],
+			verticalSpacing: 0
+		}],
+		/* splines: [{
 			angle: 0,
 			angleSmoothing: 0,
-			bottomScale: 0,
-			count: 35,
-			height: 2.3,
-			profile: "block",
+			bottomScale: 1,
+			topScale: 1,
+			count: 4,
+			height: 1,
 			range: [0, 1],
-			scaleSmoothing: 0.4,
-			thickness: 1.03,
-			topScale: 0
-		}]
+			scaleSmoothing: 0,
+			thickness: 0.1,
+			rootThickness: 0.7
+		}] */
 	}
 
 }
@@ -107,7 +108,21 @@ const SCHEMA = {
 			"onChange": () => { updateKnob("body") }
 		},
 		screwHole: {
-			"properties": {},
+			"properties": {
+				"splines": {
+					"type": "array",
+					"properties": {
+						"range": {
+							"type": "range",
+							"min": 0,
+							"max": 1,
+						}
+					},
+					"onChange": () => {
+						updateKnob("internalSplines")
+					}
+				}
+			},
 			"onChange": () => { updateKnob("screwHole") }
 		},
 		pointer: {
@@ -136,10 +151,6 @@ const SCHEMA = {
 				splines: {
 					"type": "array",
 					"properties": {
-						"profile": {
-							type: "option",
-							"options": ["gear", "block"]
-						},
 						"range": {
 							"type": "range",
 							"min": 0,
@@ -156,7 +167,7 @@ const SCHEMA = {
 }
 
 const SLIDERS = {
-	/** @type {{[K in keyof import("./knob.js").KNOB_BODY]: number[]}} */
+	/** @type {{[K in keyof import("./knob.js").KNOB_BODY_CONFIG]: number[]}} */
 	body: {
 		height: [0.1, 100],
 		radius: [4, 100],
@@ -166,7 +177,6 @@ const SLIDERS = {
 		balance: [0, 1],
 		smoothing: [0, 1]
 	},
-	/** @type {{[K in keyof import("./knob.js").KNOB_SLOT]: number[]}} */
 	screwHole: {
 		height: [0.1, 100],
 		radius: [0, 10],
@@ -174,16 +184,27 @@ const SLIDERS = {
 		bottomRadius: [0, 10],
 		sides: [0, 25, 1],
 		balance: [0, 1],
-		offset: [0, 2 * Math.PI],
-		flatWidth: [0, 100]
+		angle: [0, 2 * Math.PI],
+		splines: {
+			count: [0, 40, 1],
+			thickness: [0.1, 5],
+			rootThickness: [0.1, 5],
+			smoothing: [-1, 1],
+			height: [0.1, 5],
+			topScale: [0, 1],
+			bottomScale: [0, 1],
+			scaleSmoothing: [-0.75, 0.75],
+			angle: [-Math.PI / 2, Math.PI / 2],
+			angleSmoothing: [-1, 1]
+		}
 	},
-	/** @type {{[K in keyof import("./knob.js").KNOB_POINTER]: number[]}} */
+	/** @type {{[K in keyof import("./knob.js").KNOB_POINTER_CONFIG]: number[]}} */
 	pointer: {
 		height: [0, 100],
-		offset: [0, 2 * Math.PI],
+		angle: [0, 2 * Math.PI],
 		position: [0, 1], // The y position relative to  height,
-		rStart: [0, 100],
-		rEnd: [0, 100],
+		radialOffset: [0, 100],
+		length: [0, 100],
 		widthStart: [0, Math.PI / 6],
 		widthEnd: [0, Math.PI / 6]
 	},
@@ -201,14 +222,14 @@ const SLIDERS = {
 		splines: {
 			count: [0, 40, 1],
 			thickness: [0.1, 5],
-			topThickness: [0.1, 5],
 			rootThickness: [0.1, 5],
+			smoothing: [-1, 1],
 			height: [0.1, 5],
 			topScale: [0, 1],
 			bottomScale: [0, 1],
-			scaleSmoothing: [0, 1],
+			scaleSmoothing: [-0.75, 0.75],
 			angle: [-Math.PI / 2, Math.PI / 2],
-			angleSmoothing: [-0.5, 0.5]
+			angleSmoothing: [-1, 1]
 		}
 	}
 }
@@ -221,15 +242,13 @@ function start() {
 	setBindings()
 	setScene()
 	currentKnob = new KNOB(KNOB_CONFIG, scene)
+	//for debugging purposes
 	window.currentKnob = currentKnob
 }
 
 
 function setDOM() {
 	fillSchema(SLIDERS, SCHEMA)
-	SCHEMA.properties.screwHole.properties.doubleD = {
-		"type": "toggle",
-	}
 	onResize()
 }
 
@@ -274,7 +293,7 @@ function setScene() {
 }
 
 /**
- * @param {keyof import("./knob.js").KNOB_CONFIG | "knurling" | "splines"} updatedPart 
+ * @param {keyof import("./knob.js").KNOB_CONFIG|"knurling"|"splines"|"internalSplines"|"threads"} updatedPart 
  */
 function updateKnob(updatedPart) {
 	currentKnob.update(KNOB_CONFIG, [updatedPart])
