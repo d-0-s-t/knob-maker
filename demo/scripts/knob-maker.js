@@ -64,7 +64,7 @@ const KNOB_CONFIG = {
 		radius: 5,
 		topRadius: 5
 	},
-	pointer: {
+	pointers: [{
 		height: 15,
 		radialOffset: 10,
 		position: 0.75,
@@ -72,7 +72,7 @@ const KNOB_CONFIG = {
 		angle: 0,
 		widthEnd: 0.02,
 		widthStart: 0.25
-	},
+	}],
 	surface: {
 		knurling: [{
 			sizeX: 1,
@@ -108,26 +108,13 @@ const SCHEMA = {
 			"onChange": () => { updateKnob("body") }
 		},
 		screwHole: {
-			"properties": {
-				"splines": {
-					"type": "array",
-					"properties": {
-						"range": {
-							"type": "range",
-							"min": 0,
-							"max": 1,
-						}
-					},
-					"onChange": () => {
-						updateKnob("internalSplines")
-					}
-				}
-			},
+			"properties": {},
 			"onChange": () => { updateKnob("screwHole") }
 		},
-		pointer: {
+		pointers: {
+			"type": "array",
 			"properties": {},
-			"onChange": () => { updateKnob("pointer") }
+			"onChange": (key, c) => { updateKnob("pointers", KNOB_CONFIG.pointers.indexOf(c)) }
 		},
 		surface: {
 			"properties": {
@@ -144,8 +131,8 @@ const SCHEMA = {
 							"max": 1,
 						}
 					},
-					"onChange": () => {
-						updateKnob("knurling")
+					"onChange": (key, c) => {
+						updateKnob("knurling", KNOB_CONFIG.surface.knurling.indexOf(c))
 					}
 				},
 				splines: {
@@ -157,8 +144,8 @@ const SCHEMA = {
 							"max": 1
 						}
 					},
-					onChange: () => {
-						updateKnob("splines")
+					onChange: (key, c) => {
+						updateKnob("splines", KNOB_CONFIG.surface.splines.indexOf(c))
 					}
 				}
 			}
@@ -184,29 +171,29 @@ const SLIDERS = {
 		bottomRadius: [0, 10],
 		sides: [0, 25, 1],
 		balance: [0, 1],
-		angle: [0, 2 * Math.PI],
+		angle: [0, 360, 0.5],
 		splines: {
 			count: [0, 40, 1],
-			thickness: [0.1, 5],
-			rootThickness: [0.1, 5],
+			thickness: [0, 120, 0.5],
+			rootThickness: [1, 120, 0.5],
 			smoothing: [-1, 1],
 			height: [0.1, 5],
 			topScale: [0, 1],
 			bottomScale: [0, 1],
 			scaleSmoothing: [-0.75, 0.75],
-			angle: [-Math.PI / 2, Math.PI / 2],
+			angle: [-90, 90],
 			angleSmoothing: [-1, 1]
 		}
 	},
 	/** @type {{[K in keyof import("./knob.js").KNOB_POINTER_CONFIG]: number[]}} */
-	pointer: {
+	pointers: {
 		height: [0, 100],
-		angle: [0, 2 * Math.PI],
+		angle: [0, 360, 0.5],
 		position: [0, 1], // The y position relative to  height,
 		radialOffset: [0, 100],
 		length: [0, 100],
-		widthStart: [0, Math.PI / 6],
-		widthEnd: [0, Math.PI / 6]
+		widthStart: [0, 30, 0.5],
+		widthEnd: [0, 30, 0.5]
 	},
 	surface: {
 		knurling: {
@@ -217,18 +204,18 @@ const SLIDERS = {
 			radialCount: [1, 100, 1],
 			verticalOffset: [0, 10],
 			rise: [0.5, 1],
-			shapeRotation: [0, 2 * Math.PI]
+			shapeRotation: [-180, 180, 0.5]
 		},
 		splines: {
 			count: [0, 40, 1],
-			thickness: [0.1, 5],
-			rootThickness: [0.1, 5],
+			thickness: [0, 120, 0.5],
+			rootThickness: [1, 120, 0.5],
 			smoothing: [-1, 1],
 			height: [0.1, 5],
 			topScale: [0, 1],
 			bottomScale: [0, 1],
 			scaleSmoothing: [-0.75, 0.75],
-			angle: [-Math.PI / 2, Math.PI / 2],
+			angle: [-90, 90, 0.5],
 			angleSmoothing: [-1, 1]
 		}
 	}
@@ -236,6 +223,11 @@ const SLIDERS = {
 
 /** @type {KNOB} */
 let currentKnob
+let currentUnits = /**@type {"mm"|"inches"} */ ("mm")
+const INCHES_TO_MM = 25.4
+const ANGLE_TYPES = ["thickness", "rootThickness", "widthStart",
+	"shapeRotation", "widthEnd", "angle"
+]
 
 function start() {
 	setDOM()
@@ -249,6 +241,20 @@ function start() {
 
 function setDOM() {
 	fillSchema(SLIDERS, SCHEMA)
+	SCHEMA.properties.screwHole.properties["splines"] = {
+		"type": "array",
+		"properties": {
+			"range": {
+				"type": "range",
+				"min": 0,
+				"max": 1,
+			}
+		},
+		"onChange": (key, c) => {
+			updateKnob("internalSplines", KNOB_CONFIG.screwHole.splines.indexOf(c))
+		}
+	}
+	fillSchema(SLIDERS.screwHole.splines, SCHEMA.properties.screwHole.properties["splines"])
 	onResize()
 }
 
@@ -258,19 +264,60 @@ function setDOM() {
  */
 function fillSchema(source, schemaTarget) {
 	for (let key in source) {
-		if (source[key].constructor != Array)
+		if (source[key].constructor != Array) {
 			fillSchema(source[key], schemaTarget.properties[key])
-		else {
+		} else if (schemaTarget) {
 			if (!schemaTarget.properties)
 				schemaTarget.properties = {}
+			const isAngleType = ANGLE_TYPES.indexOf(key) + 1
 			schemaTarget.properties[key] = {
 				type: "number",
 				min: source[key][0],
 				max: source[key][1],
-				step: source[key][2]
+				step: source[key][2],
+				transformIn: isAngleType ? toRadians : toMM,
+				transformOut: isAngleType ? toDegrees : toCurrentUnits
 			}
 		}
 	}
+}
+
+/**
+ * @param {number} input 
+ * @returns {number}
+ */
+function toMM(input) {
+	if (currentUnits == "mm")
+		return input
+	else
+		return input * INCHES_TO_MM
+}
+
+/**
+ * @param {number} input 
+ * @returns {number}
+ */
+function toCurrentUnits(input) {
+	if (currentUnits == "mm")
+		return input
+	else
+		return input / INCHES_TO_MM
+}
+
+/**
+ * @param {number} input 
+ * @returns {number}
+ */
+function toRadians(input) {
+	return input * Math.PI / 180
+}
+
+/**
+ * @param {number} input 
+ * @returns {number}
+ */
+function toDegrees(input) {
+	return input * 180 / Math.PI
 }
 
 function onResize() {
@@ -283,7 +330,7 @@ function onResize() {
 function setBindings() {
 	new CONTROLS(SCHEMA, document.querySelector("#controlsContainer"), KNOB_CONFIG)
 	window.addEventListener("resize", onResize)
-	document.getElementById("downloadSTL").addEventListener("click", () => { currentKnob.exportSTL() })
+	document.getElementById("downloadSTL").addEventListener("click", () => { currentKnob.exportSTL(true) })
 }
 
 function setScene() {
@@ -294,9 +341,10 @@ function setScene() {
 
 /**
  * @param {keyof import("./knob.js").KNOB_CONFIG|"knurling"|"splines"|"internalSplines"|"threads"} updatedPart 
+ * @param {number} [index]
  */
-function updateKnob(updatedPart) {
-	currentKnob.update(KNOB_CONFIG, [updatedPart])
+function updateKnob(updatedPart, index) {
+	currentKnob.update(KNOB_CONFIG, [updatedPart], index >= 0 ? index : null)
 }
 
 window.onload = start

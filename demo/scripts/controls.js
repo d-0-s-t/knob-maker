@@ -68,7 +68,7 @@ export class CONTROLS {
 					source[prop] = []
 				for (let i = 0; i < source[prop].length; i++) {
 					const moreInnerTarget = this.createContainer(dictionary.properties[prop], prop, innerTarget, i + 1)
-					this.createDeleteButton(source[prop], moreInnerTarget.parentElement, dictionary.onChange)
+					this.createDeleteButton(source[prop], moreInnerTarget.parentElement, dictionary.properties[prop].onChange)
 					this.populateControls(dictionary.properties[prop], source[prop][i], moreInnerTarget)
 				}
 				this.createAddButton(dictionary.properties[prop], source[prop], innerTarget.parentElement, prop)
@@ -86,7 +86,7 @@ export class CONTROLS {
 	/**
 	 * @param {any[]} source
 	 * @param {HTMLElement} target
-	 * @param {()=>void} onChange
+	 * @param {(s:string, c: any)=>void} onChange
 	 */
 	createDeleteButton(source, target, onChange) {
 		const innerTarget = target.querySelector(".controlHeader h2")
@@ -106,7 +106,7 @@ export class CONTROLS {
 			}
 			source.splice(deleteIndex, 1)
 			target.parentElement.removeChild(target)
-			onChange && onChange()
+			onChange && onChange(null, source)
 		})
 	}
 
@@ -141,7 +141,7 @@ export class CONTROLS {
 			const newContainer = _this.createContainer(dictionary, prop, innerTarget, source.length)
 			_this.createDeleteButton(source, newContainer.parentElement, dictionary.onChange)
 			_this.populateControls(dictionary, newEntry, newContainer)
-			dictionary.onChange && dictionary.onChange()
+			dictionary.onChange && dictionary.onChange(prop, source)
 			_this.setDraggable(innerTarget, source, dictionary.onChange)
 		})
 	}
@@ -173,6 +173,7 @@ export class CONTROLS {
 		switch (propertyObj.type) {
 			case "slider":
 			case "number": {
+				const tfOut = propertyObj.transformOut || ((n) => n)
 				inputElement = document.createElement("input")
 				inputElement.type = propertyObj.type == "slider" ? "range" : "number"
 				inputElement.min = (propertyObj.min || 0) + ""
@@ -180,22 +181,15 @@ export class CONTROLS {
 				inputElement.step = (propertyObj.step || 0.01) + ""
 				if (propertyObj.inverseDirection)
 					inputElement.classList.add("controlInverse")
-				inputElement.value = (source[key] || 0) + ""
-				let previousValue = inputElement.value
-				const regex = /^\d*\.?\d*$/
+
+
+				inputElement.value = tfOut(source[key] || 0) + ""
+				const tf = propertyObj.transformIn || ((t) => t)
 
 				inputElement.addEventListener("input", () => {
 					let newValue = parseFloat(inputElement.value)
-					source[key] = newValue
-					let callChange = true
-					/* if (propertyObj.type == "number") {
-						if (inputElement.value && !regex.test(inputElement.value)) {
-							inputElement.value = previousValue
-							callChange = false
-						} else
-							previousValue = inputElement.value
-					} */
-					callChange && propertyObj.onChange && propertyObj.onChange()
+					source[key] = tf(newValue)
+					propertyObj.onChange && propertyObj.onChange(key, source)
 				})
 				break
 			}
@@ -205,7 +199,7 @@ export class CONTROLS {
 				inputElement.checked = source[key]
 				inputElement.addEventListener("input", () => {
 					source[key] = inputElement.checked
-					propertyObj.onChange && propertyObj.onChange()
+					propertyObj.onChange && propertyObj.onChange(key, source)
 				})
 				break
 			case "color":
@@ -214,18 +208,18 @@ export class CONTROLS {
 				inputElement.value = source[key] || "#000000"
 				inputElement.addEventListener("input", () => {
 					source[key] = inputElement.value
-					propertyObj.onChange && propertyObj.onChange()
+					propertyObj.onChange && propertyObj.onChange(key, source)
 				})
 				break
 			case "range":
 				if (!source[key])
 					source[key] = [0.25, 0.75]
-				customDom = createRange(propertyObj, source[key])
+				customDom = createRange(propertyObj, source, key)
 				break
 			case "gradient":
 				if (!source[key])
 					source[key] = [{ offset: 0.5, color: "#cccccc" }]
-				customDom = createRange(propertyObj, source[key])
+				customDom = createRange(propertyObj, source, key)
 				break
 			case "option": {
 				inputElement = document.createElement("select")
@@ -237,7 +231,7 @@ export class CONTROLS {
 				})
 				inputElement.addEventListener("change", function() {
 					source[key] = inputElement.value
-					propertyObj.onChange && propertyObj.onChange()
+					propertyObj.onChange && propertyObj.onChange(key, source)
 				})
 				break
 			}
@@ -393,10 +387,12 @@ let currentHandle
 
 /**
  * @param {CONTROLS_TYPES.GradientType|CONTROLS_TYPES.RangeType} rangeObj
- * @param {number[]|CONTROLS_TYPES.GradientStop[]} values
+ * @param {{[s:string]:any}} source
+ * @param {string} key
  * @returns {HTMLDivElement}
  */
-function createRange(rangeObj, values) {
+function createRange(rangeObj, source, key) {
+	const values = /** @type {number[]|CONTROLS_TYPES.GradientStop[]} */ (source[key])
 	const customDom = document.createElement("div")
 	customDom.classList.add("customontrolElement", "rangeSlider")
 	const rangeBackground = document.createElement("div")
@@ -424,7 +420,7 @@ function createRange(rangeObj, values) {
 			const offsetValues = /** @type {CONTROLS_TYPES.GradientStop[]} */ (values)
 			colorHandle.addEventListener("input", () => {
 				offsetValues[handles.indexOf(handle)].color = colorHandle.value
-				rangeObj.onChange && rangeObj.onChange()
+				rangeObj.onChange && rangeObj.onChange(key, source)
 			})
 			itemValue = ((offsetValues[i].offset == null) ? 0.5 : offsetValues[i].offset)
 			colorHandle.classList.add("colorHandle")
@@ -449,7 +445,7 @@ function createRange(rangeObj, values) {
 					values.splice(index, 1)
 					currentHandle = null
 					event.preventDefault()
-					rangeObj.onChange && rangeObj.onChange()
+					rangeObj.onChange && rangeObj.onChange(key, source)
 				}
 			}
 		})
@@ -476,7 +472,7 @@ function createRange(rangeObj, values) {
 			}
 			values.splice(createAtIndex, 0, { offset: value, color: "#ffffff" })
 			createHandle(createAtIndex)
-			rangeObj.onChange && rangeObj.onChange()
+			rangeObj.onChange && rangeObj.onChange(key, source)
 		})
 	}
 
@@ -503,7 +499,7 @@ function createRange(rangeObj, values) {
 				offsetValues[index].offset = value
 			}
 			currentHandle.style.left = ratio * 100 + "%"
-			rangeObj.onChange && rangeObj.onChange()
+			rangeObj.onChange && rangeObj.onChange(key, source)
 		}
 	})
 

@@ -25,7 +25,6 @@
  */
 
 import * as BABYLON from "babylonjs"
-import "babylonjs-serializers"
 
 /**
  * @typedef {object} KNOB_BODY_CONFIG
@@ -61,7 +60,7 @@ import "babylonjs-serializers"
 /**
  * @typedef {object} KNOB_CONFIG
  * @property {KNOB_BODY_CONFIG} body
- * @property {KNOB_POINTER_CONFIG} [pointer]
+ * @property {KNOB_POINTER_CONFIG[]} [pointers]
  * @property {KNOB_HOLE_CONFIG} [screwHole]
  * @property {SURFACE_CONFIG} [surface]
  */
@@ -114,16 +113,17 @@ export class KNOB {
 	/**
 	 * @param {KNOB_CONFIG} config 
 	 * @param {BABYLON.Scene} scene 
-	 * @param {boolean} [draftMode] [WIP - NOT IMPLEMENTED] Doesn't combine meshes and doesn't perform CSG.
+	 * // @param {boolean} [draftMode] [WIP - NOT IMPLEMENTED] Doesn't combine meshes and doesn't perform CSG.
 	 * Meshes will be transuncent to see through. This is mainly for performance reasons
 	 */
-	constructor(config, scene, draftMode) {
+	constructor(config, scene) {
 		/** @type {KNOB_CONFIG} */
 		this.config = JSON.parse(JSON.stringify(config))
 		this.scene = scene
 		this.knurlingMeshes = /** @type {Mesh[]} */ ([])
 		this.surfaceSplines = /** @type {Mesh[]} */ ([])
 		this.screwHoleSplines = /** @type {Mesh[]} */ ([])
+		this.pointers = /** @type {Mesh[]} */ ([])
 		this.update(config)
 	}
 
@@ -142,20 +142,14 @@ export class KNOB {
 	/**
 	 * @param {KNOB_CONFIG} config
 	 * @param {(keyof KNOB_CONFIG|"knurling"|"splines"|"internalSplines"|"threads")[]} [partsToUpdate] 
+	 * @param {number} [index]
 	 */
-	update(config, partsToUpdate) {
+	update(config, partsToUpdate, index) {
 		if (!partsToUpdate || partsToUpdate.length == 0)
 			partsToUpdate = [
-				"body", "pointer", "screwHole",
+				"body", "pointers", "screwHole",
 				"knurling", "splines", "threads"
 			]
-
-
-		if (partsToUpdate.indexOf("pointer") + 1) {
-			this.pointerShape && this.pointerShape.dispose()
-			Object.assign(this.config.pointer, config.pointer)
-			this.pointerShape = this._createPointer(this.config.pointer)
-		}
 
 		if (partsToUpdate.indexOf("body") + 1) {
 			this.baseShape && this.baseShape.dispose()
@@ -173,32 +167,68 @@ export class KNOB {
 			this.bodyShape = this._performSubstractiveCSG(this.baseShape, this.screwHoleShape, "combined")
 			partsToUpdate.push("internalSplines")
 		}
-
-		if (partsToUpdate.indexOf("internalSplines") + 1) {
-			this.screwHoleSplines.forEach(m => m.dispose())
-			this.config.screwHole.splines = JSON.parse(JSON.stringify(config.screwHole.splines))
-			this.screwHoleSplines = this._createSplinesGroupOn(this.screwHoleProfile, this.config.screwHole.splines)
-		}
-
 		if (partsToUpdate.indexOf("surface") + 1) {
 			partsToUpdate.push("knurling")
 			partsToUpdate.push("splines")
 		}
 
-		if (partsToUpdate.indexOf("knurling") + 1) {
-			this.knurlingMeshes.forEach(mesh => mesh.dispose())
-			this.config.surface.knurling = JSON.parse(JSON.stringify(config.surface.knurling))
-			this.knurlingMeshes = this._createKnurlingGroup(this.config.surface.knurling)
+		/**
+		 * @typedef {object} ARRAY_CONFIG
+		 * @property {any} parent
+		 * @property {(c:*) => Mesh} creator
+		 * @property {Mesh[]} stash
+		 * @property {any} source
+		 */
+
+		/** @type {{[s:string]:ARRAY_CONFIG}} */
+		const ARR_CONFIGS = {
+			"pointers": {
+				"parent": /** @type {any} */ (this.config),
+				"creator": (c) => this._createPointer(c),
+				"stash": this.pointers,
+				"source": config.pointers
+			},
+			"splines": {
+				"parent": this.config.surface,
+				"creator": (c) => this._createSplineOn(this.bodyProfile, c),
+				"stash": this.surfaceSplines,
+				"source": config.surface.splines
+			},
+			"knurling": {
+				"parent": this.config.surface,
+				"creator": (c) => this._createKnurling(c),
+				"stash": this.knurlingMeshes,
+				"source": config.surface.knurling
+			},
+			"internalSplines": {
+				"parent": this.config.screwHole,
+				"creator": (c) => this._createSplineOn(this.screwHoleProfile, c),
+				"stash": this.screwHoleSplines,
+				"source": config.screwHole.splines
+			}
 		}
 
-		if (partsToUpdate.indexOf("splines") + 1) {
-			this.surfaceSplines.forEach(mesh => mesh.dispose())
-			this.config.surface.splines = JSON.parse(JSON.stringify(config.surface.splines))
-			this.surfaceSplines = this._createSplinesGroupOn(this.bodyProfile, this.config.surface.splines)
-		}
+		Object.keys(ARR_CONFIGS).forEach(( /** @type {keyof ARR_CONFIGS} */ key) => {
+			if (partsToUpdate.indexOf(key) + 1) {
+				const creatorInfo = ARR_CONFIGS[key]
+				if (index == undefined) {
+					creatorInfo.parent[key] = JSON.parse(JSON.stringify(creatorInfo.source))
+					creatorInfo.stash.forEach(mesh => mesh.dispose())
+					creatorInfo.stash.length = 0
+					creatorInfo.stash.push(...creatorInfo.parent[key].map(c => creatorInfo.creator(c)))
+				} else {
+					Object.assign(creatorInfo.parent[key][index], creatorInfo.source[index])
+					creatorInfo.stash[index] && creatorInfo.stash[index].dispose()
+					creatorInfo.stash[index] = creatorInfo.creator(creatorInfo.parent[key][index])
+				}
+			}
+		})
 
 		if (!this.bodyShape)
 			this.bodyShape = this.baseShape
+
+		//for debuggin
+		console.log("Mesh Count:" + this.scene.meshes.length)
 	}
 
 	/**
@@ -304,23 +334,12 @@ export class KNOB {
 	}
 
 	/**
-	 * @param {KNURLING_CONFIG[]} config 
-	 * @returns {BABYLON.Mesh[]}
-	 */
-	_createKnurlingGroup(config) {
-		const array = /** @type {BABYLON.Mesh[]} */ ([])
-		const _this = this
-		config.forEach(c => _this._createKnurling(c, array))
-		return array
-	}
-
-	/**
 	 * @param {KNURLING_CONFIG} config
-	 * @param {(BABYLON.Mesh|BABYLON.InstancedMesh)[]} meshArr
+	 * @returns {Mesh}
 	 */
-	_createKnurling(config, meshArr) {
+	_createKnurling(config) {
 		if (!(config.sizeX && config.sizeY && config.depth))
-			return
+			return null
 		/** @type {BABYLON.Mesh} */
 		let baseMesh
 		if (!config.shape)
@@ -409,6 +428,7 @@ export class KNOB {
 		const xAxis = new BABYLON.Vector3(-1, 0, 0)
 		const center = BABYLON.Vector3.Zero()
 		let meshID = 0
+		const parentMesh = new BABYLON.Mesh("knurlingParentMesh")
 		/** @type {BABYLON.InstancedMesh} */
 		let referenceMesh
 		/** profile is cylinder */
@@ -420,18 +440,17 @@ export class KNOB {
 					yPos += config.sizeY
 				}
 				referenceMesh = null
-				while (yPos < yEnd) {
+				while (yPos <= yEnd) {
 					const t = baseMesh.createInstance(baseMesh.name + meshID++)
 					if (!referenceMesh) {
 						t.rotateAround(center, verticalAxis, angle)
 						referenceMesh = t
 					} else {
-						copyRotation(t, referenceMesh)
-						t.position.copyFrom(referenceMesh.position)
+						copyTransform(t, referenceMesh)
 					}
-					meshArr.push(t)
 					t.position.y = yPos
 					yPos += yDist
+					t.setParent(parentMesh)
 				}
 				angle += radialStep
 			}
@@ -458,42 +477,28 @@ export class KNOB {
 						slopeHeightMap[i].angle
 					)
 					t.rotateAround(center, verticalAxis, angle)
-					meshArr.push(t)
+					t.setParent(parentMesh)
+					referenceMesh = t
 				}
 				angle += radialStep
 			}
 		}
-		const lastMesh = meshArr.pop()
-		if (!lastMesh) {
-			baseMesh.dispose()
-			return
-		}
-		meshArr.push(baseMesh)
-		baseMesh.position.copyFrom(lastMesh.position)
-		copyRotation(baseMesh, lastMesh)
-		lastMesh.dispose()
-	}
 
-	/**
-	 * @param {Profile} profile
-	 * @param {SPLINE_CONFIG[]} config
-	 * @returns {(BABYLON.Mesh|BABYLON.InstancedMesh)[]}
-	 */
-	_createSplinesGroupOn(profile, config) {
-		const array = /** @type {BABYLON.Mesh[]} */ ([])
-		const _this = this
-		config.forEach(c => _this._createSplineOn(profile, c, array))
-		return array
+		copyTransform(baseMesh, referenceMesh)
+		baseMesh.setParent(parentMesh)
+		referenceMesh.dispose()
+
+		return parentMesh
 	}
 
 	/**
 	 * @param {Profile} profile
 	 * @param {SPLINE_CONFIG} config
-	 * @param {(BABYLON.Mesh|BABYLON.InstancedMesh)[]} arr
+	 * @returns {BABYLON.Mesh}
 	 */
-	_createSplineOn(profile, config, arr) {
+	_createSplineOn(profile, config) {
 		if (config.count < 1 || !config.height)
-			return
+			return null
 
 		const start = profile.getDistanceAt(config.range[0])
 		const end = profile.getDistanceAt(config.range[1])
@@ -563,7 +568,6 @@ export class KNOB {
 				BABYLON.Mesh.BACKSIDE : null
 		})
 		baseMesh.convertToFlatShadedMesh()
-		arr.push(baseMesh)
 
 		const radialStep = 2 * Math.PI / config.count
 		let currentAngle = 0
@@ -573,8 +577,10 @@ export class KNOB {
 			currentAngle += radialStep
 			const instance = baseMesh.createInstance(baseMesh.name + i)
 			instance.rotateAround(zero, verticalAxis, currentAngle)
-			arr.push(instance)
+			instance.setParent(baseMesh)
 		}
+
+		return baseMesh
 	}
 
 	/**
@@ -655,26 +661,103 @@ export class KNOB {
 		this.surfaceSplines.forEach(mesh => mesh.dispose())
 		this.screwHoleSplines.forEach(mesh => mesh.dispose())
 		this.knurlingMeshes.forEach(mesh => mesh.dispose())
-		this.pointerShape && this.pointerShape.dispose()
+		this.pointers.forEach(mesh => mesh.dispose())
 	}
 
-	exportSTL() {
-		//@ts-ignore
-		BABYLON.STLExport.CreateSTL(this.scene.meshes, true, "knob", false, false)
+	/**
+	 * Altered from babylonJSSerializer's ExportSTL because 
+	 * that doesn't support Instanced Meshes
+	 * @param {boolean} [download]
+	 * @returns {string} The stl as plain string
+	 */
+	exportSTL(download) {
+		/**
+		 * @param {BABYLON.IndicesArray} indices
+		 * @param {BABYLON.FloatArray} vertices
+		 * @param {number} i
+		 * @returns {{v: BABYLON.Vector3[], n: BABYLON.Vector3}}
+		 */
+		let getFaceData = function(indices, vertices, i) {
+			let id = [indices[i] * 3, indices[i + 1] * 3, indices[i + 2] * 3]
+			let v = [
+				new BABYLON.Vector3(vertices[id[0]], vertices[id[0] + 2], vertices[id[0] + 1]),
+				new BABYLON.Vector3(vertices[id[1]], vertices[id[1] + 2], vertices[id[1] + 1]),
+				new BABYLON.Vector3(vertices[id[2]], vertices[id[2] + 2], vertices[id[2] + 1]),
+			]
+			let p1p2 = v[0].subtract(v[1])
+			let p3p2 = v[2].subtract(v[1])
+			let n = BABYLON.Vector3.Cross(p3p2, p1p2).normalize()
+			return { v: v, n: n }
+		}
+
+		let data
+
+		data = "solid stlmesh\r\n"
+		for (let i = 0; i < this.scene.meshes.length; i++) {
+			let mesh = this.scene.meshes[i]
+			let vertices = getTransformedVertices(mesh)
+			if (!vertices.length)
+				continue
+
+			let indices = mesh.getIndices() || []
+			for (let i_1 = 0; i_1 < indices.length; i_1 += 3) {
+				let fd = getFaceData(indices, vertices, i_1)
+				data += "facet normal " + fd.n.x + " " + fd.n.y + " " + fd.n.z + "\r\n"
+				data += "\touter loop\r\n"
+				data += "\t\tvertex " + fd.v[0].x + " " + fd.v[0].y + " " + fd.v[0].z + "\r\n"
+				data += "\t\tvertex " + fd.v[1].x + " " + fd.v[1].y + " " + fd.v[1].z + "\r\n"
+				data += "\t\tvertex " + fd.v[2].x + " " + fd.v[2].y + " " + fd.v[2].z + "\r\n"
+				data += "\tendloop\r\n"
+				data += "endfacet\r\n"
+			}
+		}
+
+		data += "endsolid stlmesh"
+
+		if (download) {
+			let a = document.createElement("a")
+			let blob = new Blob([data], { type: "application/octet-stream" })
+			a.href = window.URL.createObjectURL(blob)
+			a.download = "knob.stl"
+			a.click()
+		}
+		return data
 	}
+}
+
+/**
+ * 
+ * @param {BABYLON.AbstractMesh} mesh 
+ * @returns {BABYLON.FloatArray}
+ */
+function getTransformedVertices(mesh) {
+	let sourceMesh = mesh
+	if (mesh.constructor == BABYLON.InstancedMesh)
+		sourceMesh = mesh._sourceMesh
+	let data = sourceMesh.getVerticesData(BABYLON.VertexBuffer.PositionKind, true, true)
+	if (!data)
+		return []
+	let temp = BABYLON.Vector3.Zero()
+	let index
+	for (index = 0; index < data.length; index += 3) {
+		BABYLON.Vector3.TransformCoordinatesFromFloatsToRef(data[index], data[index + 1], data[index + 2], mesh.computeWorldMatrix(true), temp)
+			.toArray(data, index)
+	}
+	return data
 }
 
 /**
  * @param {BABYLON.Mesh|BABYLON.InstancedMesh} targetMesh 
  * @param {BABYLON.Mesh|BABYLON.InstancedMesh} sourceMesh 
  */
-function copyRotation(targetMesh, sourceMesh) {
+function copyTransform(targetMesh, sourceMesh) {
 	targetMesh.rotation.copyFrom(sourceMesh.rotation)
 	if (sourceMesh.rotationQuaternion) {
 		if (!targetMesh.rotationQuaternion)
 			targetMesh.rotationQuaternion = new BABYLON.Quaternion(0, 0, 0, 1)
 		targetMesh.rotationQuaternion.copyFrom(sourceMesh.rotationQuaternion)
 	}
+	targetMesh.position.copyFrom(sourceMesh.position)
 }
 
 /**
