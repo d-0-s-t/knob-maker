@@ -45,59 +45,77 @@ const camera = new BABYLON.ArcRotateCamera("mainCamera", 0, Math.PI / 3, 100,
 
 /** @type {import("./knob.js").KNOB_CONFIG} */
 const KNOB_CONFIG = {
-	body: {
-		// topRadius: 5,
-		// bottomRadius: 15,
-		topRadius: 10,
-		bottomRadius: 10,
-		radius: 10,
-		height: 30,
-		sides: 0,
-		smoothing: 0,
-		balance: 0.5
+	"body": {
+		"topRadius": 15,
+		"bottomRadius": 15,
+		"radius": 15,
+		"height": 30,
+		"smoothing": 0,
+		"balance": 0.5
 	},
-	screwHole: {
-		balance: 1,
-		bottomRadius: 5,
-		height: 8,
-		angle: 0,
-		radius: 5,
-		topRadius: 5
-	},
-	pointers: [{
-		height: 15,
-		radialOffset: 10,
-		position: 0.75,
-		length: 2,
-		angle: 0,
-		widthEnd: 0.02,
-		widthStart: 0.25
-	}],
-	surface: {
-		knurling: [{
-			sizeX: 1,
-			sizeY: 1,
-			depth: 0.5,
-			radialCount: 50,
-			verticalOffset: 0,
-			rise: 0.9,
-			range: [0, 1],
-			verticalSpacing: 0
-		}],
-		/* splines: [{
-			angle: 0,
-			angleSmoothing: 0,
-			bottomScale: 1,
-			topScale: 1,
-			count: 4,
-			height: 1,
-			range: [0, 1],
-			scaleSmoothing: 0,
-			thickness: 0.1,
-			rootThickness: 0.7
+	"screwHole": {
+		"balance": 1,
+		"bottomRadius": 5,
+		"height": 8,
+		"angle": 0,
+		"radius": 5,
+		"topRadius": 5,
+		/* "splines": [{
+			"range": [
+				0,
+				1
+			],
+			"count": 1,
+			"width": 1.5,
+			"topScale": 1,
+			"bottomScale": 1,
+			"scaleSmoothing": 0,
+			"angle": 0,
+			"angleSmoothing": 0,
+			"height": 10
 		}] */
+	},
+	"pointers": [{
+		"height": 15,
+		"radialOffset": 10,
+		"position": 0.75,
+		"length": 2,
+		"angle": 0,
+		"widthEnd": 0.02,
+		"widthStart": 0.25
+	}],
+	"surface": {
+		"splines": [{
+			range: [0, 1],
+			rootThickness: Math.PI / 6,
+			thickness: Math.PI / 10,
+			height: 4,
+			count: 3
+		}],
+		/* "threads": [{
+			range: [0, 1],
+			depth: 1,
+			pitch: 5
+		}], */
+		"knurling": [
+			/* {
+						"range": [
+							0.01485148514851485,
+							1
+						],
+						"sizeX": 1,
+						"sizeY": 1,
+						"depth": 0.31,
+						"shape": "pyramid",
+						"verticalOffset": 0,
+						"verticalSpacing": 0,
+						"rise": 0.9,
+						"radialCount": 83,
+						"depthSmoothing": 0.28,
+						"shapeRotation": 0
+					} */
+		]
 	}
-
 }
 
 /** @type  {CONTROLS_TYPES.BaseProperty} */
@@ -138,6 +156,9 @@ const SCHEMA = {
 				splines: {
 					"type": "array",
 					"properties": {
+						"substractive": {
+							"type": "toggle"
+						},
 						"range": {
 							"type": "range",
 							"min": 0,
@@ -146,6 +167,22 @@ const SCHEMA = {
 					},
 					onChange: (key, c) => {
 						updateKnob("splines", KNOB_CONFIG.surface.splines.indexOf(c))
+					}
+				},
+				threads: {
+					"type": "array",
+					"properties": {
+						"range": {
+							"type": "range",
+							"min": 0,
+							"max": 1
+						},
+						"leftHanded": {
+							"type": "toggle"
+						}
+					},
+					onChange: (key, c) => {
+						updateKnob("threads", KNOB_CONFIG.surface.threads.indexOf(c))
 					}
 				}
 			}
@@ -176,13 +213,18 @@ const SLIDERS = {
 			count: [0, 40, 1],
 			thickness: [0, 120, 0.5],
 			rootThickness: [1, 120, 0.5],
+			width: [0, 10],
 			smoothing: [-1, 1],
 			height: [0.1, 5],
 			topScale: [0, 1],
 			bottomScale: [0, 1],
 			scaleSmoothing: [-0.75, 0.75],
 			angle: [-90, 90],
-			angleSmoothing: [-1, 1]
+			angleSmoothing: [-1, 1],
+		},
+		threads: {
+			depth: [0.1, 10],
+			pitch: [0.1, 10]
 		}
 	},
 	/** @type {{[K in keyof import("./knob.js").KNOB_POINTER_CONFIG]: number[]}} */
@@ -204,19 +246,25 @@ const SLIDERS = {
 			radialCount: [1, 100, 1],
 			verticalOffset: [0, 10],
 			rise: [0.5, 1],
-			shapeRotation: [-180, 180, 0.5]
+			shapeRotation: [-180, 180, 0.5],
+			depthSmoothing: [0, 0.5]
 		},
 		splines: {
 			count: [0, 40, 1],
 			thickness: [0, 120, 0.5],
 			rootThickness: [1, 120, 0.5],
+			width: [0, 10],
 			smoothing: [-1, 1],
 			height: [0.1, 5],
 			topScale: [0, 1],
 			bottomScale: [0, 1],
 			scaleSmoothing: [-0.75, 0.75],
 			angle: [-90, 90, 0.5],
-			angleSmoothing: [-1, 1]
+			angleSmoothing: [-1, 1],
+		},
+		threads: {
+			pitch: [0.1, 10],
+			depth: [0.1, 10]
 		}
 	}
 }
@@ -234,7 +282,7 @@ function start() {
 	setBindings()
 	setScene()
 	currentKnob = new KNOB(KNOB_CONFIG, scene)
-	//for debugging purposes
+	// @ts-ignore
 	window.currentKnob = currentKnob
 }
 
@@ -244,6 +292,9 @@ function setDOM() {
 	SCHEMA.properties.screwHole.properties["splines"] = {
 		"type": "array",
 		"properties": {
+			"substractive": {
+				"type": "toggle"
+			},
 			"range": {
 				"type": "range",
 				"min": 0,
@@ -252,6 +303,22 @@ function setDOM() {
 		},
 		"onChange": (key, c) => {
 			updateKnob("internalSplines", KNOB_CONFIG.screwHole.splines.indexOf(c))
+		}
+	}
+	SCHEMA.properties.screwHole.properties["threads"] = {
+		"type": "array",
+		"properties": {
+			"range": {
+				"type": "range",
+				"min": 0,
+				"max": 1,
+			},
+			"leftHanded": {
+				"type": "toggle"
+			}
+		},
+		"onChange": (key, c) => {
+			updateKnob("internalThreads", KNOB_CONFIG.screwHole.threads.indexOf(c))
 		}
 	}
 	fillSchema(SLIDERS.screwHole.splines, SCHEMA.properties.screwHole.properties["splines"])
@@ -328,7 +395,8 @@ function onResize() {
 }
 
 function setBindings() {
-	new CONTROLS(SCHEMA, document.querySelector("#controlsContainer"), KNOB_CONFIG)
+	//@ts-ignore
+	window.controls = new CONTROLS(SCHEMA, document.querySelector("#controlsContainer"), KNOB_CONFIG, 1000)
 	window.addEventListener("resize", onResize)
 	document.getElementById("downloadSTL").addEventListener("click", () => { currentKnob.exportSTL(true) })
 }
@@ -340,7 +408,7 @@ function setScene() {
 }
 
 /**
- * @param {keyof import("./knob.js").KNOB_CONFIG|"knurling"|"splines"|"internalSplines"|"threads"} updatedPart 
+ * @param {import("./knob.js").UpdateKey} updatedPart 
  * @param {number} [index]
  */
 function updateKnob(updatedPart, index) {
