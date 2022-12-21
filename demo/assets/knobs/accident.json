@@ -1,0 +1,42 @@
+{
+	"body": {
+		"height": 30,
+		"segments": [{
+			"radius": 15,
+			"height": 0
+		}, {
+			"radius": 10,
+			"height": 0.5
+		}, {
+			"radius": 5,
+			"height": 1
+		}]
+	},
+	"screwHole": {
+		"height": 8,
+		"segments": [{
+			"radius": 5,
+			"height": 0.5
+		}],
+		"splines": [{
+			"width": 5
+		}]
+	},
+	"pointers": [{
+		"height": 15,
+		"offset": 0,
+		"position": 0.75,
+		"rEnd": 10,
+		"rStart": 5,
+		"widthEnd": 0.02,
+		"widthStart": 0.25
+	}],
+	"surface": {
+		"splines": [{
+			"count": 16,
+			"height": 5,
+			"width": 10,
+			"range": [0, 0.772972972972973]
+		}]
+	}
+}

@@ -1,0 +1,37 @@
+{
+	"body": {
+		"height": 30,
+		"segments": [{
+			"radius": 15,
+			"height": 0
+		}]
+	},
+	"screwHole": {
+		"segments": [{
+			"radius": 6,
+			"height": 0.4
+		}, {
+			"radius": 6,
+			"height": 1
+		}],
+		"splines": [],
+		"threads": [{
+			"range": [0, 1],
+			"pitch": 2
+		}],
+		"height": 30,
+		"angle": 0,
+		"internalThreads": [{
+			"range": [0, 1],
+			"pitch": 2
+		}]
+	},
+	"surface": {
+		"threads": [{
+			"range": [0, 1],
+			"pitch": 2.5
+		}],
+		"knurling": [],
+		"splines": []
+	}
+}

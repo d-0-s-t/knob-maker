@@ -9,11 +9,27 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<link rel="stylesheet" type="text/css" href="./styles/controls.css">
 	<link rel="stylesheet" type="text/css" href="./styles/knob-maker.css">
+	<link rel="stylesheet" type="text/css" href="./styles/knob-maker.css">
 	<script type="module" defer src="./scripts/knob-maker.js"></script>
 </head>
 
 <body>
 	<div id="configurationPanel">
+		<div id="permaContainer">
+			<select id="templateSelector">
+				<option value="none">Templates</option>
+			</select>
+			<div id="unitsSelectorContainer">
+				<label for="mmUnitsRadio"> <input id="mmUnitsRadio" value="mm" type="radio" name="units" checked> mm </label>
+				<label for="cmUnitsRadio"> <input id="cmUnitsRadio" value="cm" type="radio" name="units"> cm </label>
+				<label for="inchesUnitsRadio"> <input id="inchesUnitsRadio" value="inch" type="radio" name="units"> inch</label>
+			</div>
+			<div id="historyNavigation">
+				<button id="undoButton" title="undo" class="altFont">&lt;</button>
+				<button id="redoButton" title="redo" class="altFont">&gt;</button>
+				<button id="resetButton">Reset</button>
+			</div>
+		</div>
 		<div id="controlsContainer"></div>
 	</div>
 	<div id="drawingContainer"><canvas id="mainCanvas"></canvas></div>

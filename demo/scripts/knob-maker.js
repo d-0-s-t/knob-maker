@@ -25,8 +25,8 @@
  */
 
 /**
- * This is work in progress. No point in printing these for 
- * actual use.
+ * This is work in progress. Prints can be made for testing.
+ * May not be suitable for production, yet.
  */
 
 import "./babylonjs.js"
@@ -41,98 +41,53 @@ const camera = new BABYLON.ArcRotateCamera("mainCamera", 0, Math.PI / 3, 100,
 	new BABYLON.Vector3(0, 0, 0),
 	scene
 )
-//dimensions in millimeters. Apologies USA
+
+//working dimensions in millimeters. Apologies USA
+
+//Please contribute if you make a commonly used knob for a standard tool
+const KNOB_TEMPLATES = [{
+	"name": "Knurled Keyed Pot. #1",
+	"source": "R10-K5-K.json",
+}, {
+	"name": "Accident",
+	"source": "accident.json"
+}, {
+	"name": "Threads Test",
+	"source": "threadsTest.json"
+}]
+
+const KNOBS_FOLDER = "./assets/knobs/"
 
 /** @type {import("./knob.js").KNOB_CONFIG} */
-const KNOB_CONFIG = {
-	"body": {
-		"topRadius": 15,
-		"bottomRadius": 15,
-		"radius": 15,
-		"height": 30,
-		"smoothing": 0,
-		"balance": 0.5
-	},
-	"screwHole": {
-		"balance": 1,
-		"bottomRadius": 5,
-		"height": 8,
-		"angle": 0,
-		"radius": 5,
-		"topRadius": 5,
-		/* "splines": [{
-			"range": [
-				0,
-				1
-			],
-			"count": 1,
-			"width": 1.5,
-			"topScale": 1,
-			"bottomScale": 1,
-			"scaleSmoothing": 0,
-			"angle": 0,
-			"angleSmoothing": 0,
-			"height": 10
-		}] */
-	},
-	"pointers": [{
-		"height": 15,
-		"radialOffset": 10,
-		"position": 0.75,
-		"length": 2,
-		"angle": 0,
-		"widthEnd": 0.02,
-		"widthStart": 0.25
-	}],
-	"surface": {
-		"splines": [{
-			range: [0, 1],
-			rootThickness: Math.PI / 6,
-			thickness: Math.PI / 10,
-			height: 4,
-			count: 3
-		}],
-		/* "threads": [{
-			range: [0, 1],
-			depth: 1,
-			pitch: 5
-		}], */
-		"knurling": [
-			/* {
-						"range": [
-							0.01485148514851485,
-							1
-						],
-						"sizeX": 1,
-						"sizeY": 1,
-						"depth": 0.31,
-						"shape": "pyramid",
-						"verticalOffset": 0,
-						"verticalSpacing": 0,
-						"rise": 0.9,
-						"radialCount": 83,
-						"depthSmoothing": 0.28,
-						"shapeRotation": 0
-					} */
-		]
-	}
-}
+let currentConfig
 
 /** @type  {CONTROLS_TYPES.BaseProperty} */
 const SCHEMA = {
 	"properties": {
 		body: {
-			"properties": {},
+			"properties": {
+				"segments": {
+					"type": "array",
+					"compact": true,
+					"properties": {}
+				}
+			},
 			"onChange": () => { updateKnob("body") }
 		},
 		screwHole: {
-			"properties": {},
+			"properties": {
+				"segments": {
+					"type": "array",
+					"compact": true,
+					"properties": {}
+				}
+			},
 			"onChange": () => { updateKnob("screwHole") }
 		},
 		pointers: {
 			"type": "array",
 			"properties": {},
-			"onChange": (key, c) => { updateKnob("pointers", KNOB_CONFIG.pointers.indexOf(c)) }
+			"onChange": (key, c) => { updateKnob("pointers", currentConfig.pointers.indexOf(c)) }
 		},
 		surface: {
 			"properties": {
@@ -150,7 +105,7 @@ const SCHEMA = {
 						}
 					},
 					"onChange": (key, c) => {
-						updateKnob("knurling", KNOB_CONFIG.surface.knurling.indexOf(c))
+						updateKnob("knurling", currentConfig.surface.knurling.indexOf(c))
 					}
 				},
 				splines: {
@@ -166,7 +121,7 @@ const SCHEMA = {
 						}
 					},
 					onChange: (key, c) => {
-						updateKnob("splines", KNOB_CONFIG.surface.splines.indexOf(c))
+						updateKnob("splines", currentConfig.surface.splines.indexOf(c))
 					}
 				},
 				threads: {
@@ -182,7 +137,7 @@ const SCHEMA = {
 						}
 					},
 					onChange: (key, c) => {
-						updateKnob("threads", KNOB_CONFIG.surface.threads.indexOf(c))
+						updateKnob("threads", currentConfig.surface.threads.indexOf(c))
 					}
 				}
 			}
@@ -191,24 +146,23 @@ const SCHEMA = {
 }
 
 const SLIDERS = {
-	/** @type {{[K in keyof import("./knob.js").KNOB_BODY_CONFIG]: number[]}} */
 	body: {
 		height: [0.1, 100],
-		radius: [4, 100],
-		topRadius: [0, 100],
-		bottomRadius: [0, 100],
 		sides: [0, 25, 1],
-		balance: [0, 1],
-		smoothing: [0, 1]
+		segments: {
+			radius: [3, 100],
+			height: [0, 1],
+			smoothing: [-1, 1]
+		}
 	},
 	screwHole: {
-		height: [0.1, 100],
-		radius: [0, 10],
-		topRadius: [0, 10],
-		bottomRadius: [0, 10],
 		sides: [0, 25, 1],
-		balance: [0, 1],
 		angle: [0, 360, 0.5],
+		segments: {
+			radius: [3, 100],
+			height: [0, 1],
+			smoothing: [-1, 1]
+		},
 		splines: {
 			count: [0, 40, 1],
 			thickness: [0, 120, 0.5],
@@ -223,11 +177,10 @@ const SLIDERS = {
 			angleSmoothing: [-1, 1],
 		},
 		threads: {
-			depth: [0.1, 10],
-			pitch: [0.1, 10]
+			pitch: [0.1, 10],
+			depth: [0.1, 10]
 		}
 	},
-	/** @type {{[K in keyof import("./knob.js").KNOB_POINTER_CONFIG]: number[]}} */
 	pointers: {
 		height: [0, 100],
 		angle: [0, 360, 0.5],
@@ -243,7 +196,7 @@ const SLIDERS = {
 			sizeY: [0, 5],
 			depth: [0, 4],
 			verticalSpacing: [-4, 4],
-			radialCount: [1, 100, 1],
+			radialCount: [1, 200, 1],
 			verticalOffset: [0, 10],
 			rise: [0.5, 1],
 			shapeRotation: [-180, 180, 0.5],
@@ -271,7 +224,11 @@ const SLIDERS = {
 
 /** @type {KNOB} */
 let currentKnob
-let currentUnits = /**@type {"mm"|"inches"} */ ("mm")
+/** @type {CONTROLS} */
+let currentControls
+
+let currentUnits = /**@type {"mm"|"inch"|"cm"} */ ("mm")
+let knobSelector = document.querySelector("#permaContainer").querySelector("select")
 const INCHES_TO_MM = 25.4
 const ANGLE_TYPES = ["thickness", "rootThickness", "widthStart",
 	"shapeRotation", "widthEnd", "angle"
@@ -281,9 +238,7 @@ function start() {
 	setDOM()
 	setBindings()
 	setScene()
-	currentKnob = new KNOB(KNOB_CONFIG, scene)
-	// @ts-ignore
-	window.currentKnob = currentKnob
+	loadKnobFrom(knobSelector.options[1].value)
 }
 
 
@@ -302,7 +257,7 @@ function setDOM() {
 			}
 		},
 		"onChange": (key, c) => {
-			updateKnob("internalSplines", KNOB_CONFIG.screwHole.splines.indexOf(c))
+			updateKnob("internalSplines", currentConfig.screwHole.splines.indexOf(c))
 		}
 	}
 	SCHEMA.properties.screwHole.properties["threads"] = {
@@ -318,10 +273,17 @@ function setDOM() {
 			}
 		},
 		"onChange": (key, c) => {
-			updateKnob("internalThreads", KNOB_CONFIG.screwHole.threads.indexOf(c))
+			updateKnob("internalThreads", currentConfig.screwHole.threads.indexOf(c))
 		}
 	}
+	fillSchema(SLIDERS.screwHole.threads, SCHEMA.properties.screwHole.properties["threads"])
 	fillSchema(SLIDERS.screwHole.splines, SCHEMA.properties.screwHole.properties["splines"])
+	KNOB_TEMPLATES.forEach((knobInfo) => {
+		const option = document.createElement("option")
+		option.value = knobInfo.source
+		option.innerHTML = knobInfo.name
+		knobSelector.appendChild(option)
+	})
 	onResize()
 }
 
@@ -354,10 +316,14 @@ function fillSchema(source, schemaTarget) {
  * @returns {number}
  */
 function toMM(input) {
-	if (currentUnits == "mm")
-		return input
-	else
-		return input * INCHES_TO_MM
+	switch (currentUnits) {
+		case "cm":
+			return input * 10
+		case "mm":
+			return input
+		case "inch":
+			return input * INCHES_TO_MM
+	}
 }
 
 /**
@@ -365,10 +331,14 @@ function toMM(input) {
  * @returns {number}
  */
 function toCurrentUnits(input) {
-	if (currentUnits == "mm")
-		return input
-	else
-		return input / INCHES_TO_MM
+	switch (currentUnits) {
+		case "cm":
+			return input / 10
+		case "mm":
+			return input
+		case "inch":
+			return input / INCHES_TO_MM
+	}
 }
 
 /**
@@ -395,10 +365,73 @@ function onResize() {
 }
 
 function setBindings() {
-	//@ts-ignore
-	window.controls = new CONTROLS(SCHEMA, document.querySelector("#controlsContainer"), KNOB_CONFIG, 1000)
 	window.addEventListener("resize", onResize)
 	document.getElementById("downloadSTL").addEventListener("click", () => { currentKnob.exportSTL(true) })
+	document.getElementById("undoButton").addEventListener("click", () => {
+		const event = new KeyboardEvent("keypress", {
+			ctrlKey: true,
+			key: "z"
+		})
+		document.dispatchEvent(event)
+	})
+	document.getElementById("redoButton").addEventListener("click", () => {
+		const event = new KeyboardEvent("keypress", {
+			ctrlKey: true,
+			key: "y"
+		})
+		document.dispatchEvent(event)
+	})
+	const onKnobSelect = () => {
+		let src = knobSelector.selectedOptions[0].value
+		if (src == "none")
+			src = knobSelector.options[1].value
+		loadKnobFrom(src)
+	}
+	knobSelector.addEventListener("change", onKnobSelect)
+	document.getElementById("resetButton").addEventListener("click", onKnobSelect)
+	document.querySelector("#unitsSelectorContainer").querySelectorAll("input").forEach(input => {
+		input.addEventListener("change", function() {
+			currentUnits = /** @type {"mm"|"cm"|"inch"} */ (input.value)
+			currentControls.updateDOM()
+		})
+	})
+}
+
+/**
+ * @param {string} src 
+ */
+function loadKnobFrom(src) {
+	fetch(KNOBS_FOLDER + src).then((response) => {
+		response.json().then((json) => {
+			setKnobForEditing(json)
+		}).catch((e) => {
+			console.log("Failed to load config:" + e)
+		})
+	})
+}
+
+/**
+ * @param {import("./knob.js").KNOB_CONFIG} config 
+ */
+function setKnobForEditing(config) {
+	/**
+	 * Controls doesn't have a dispose method. Research if necessary.
+	 * We set the controls first becuase, it can help us with setting 
+	 * some defaults
+	 */
+	currentConfig = config
+	currentControls = null
+	currentControls = new CONTROLS(SCHEMA, document.querySelector("#controlsContainer"), currentConfig, 1000)
+
+	//first dispose the old one if already created
+	currentKnob && currentKnob.dispose()
+	currentKnob = new KNOB(currentConfig, scene)
+
+	//for debugging
+	//@ts-ignore
+	window.currentKnob = currentKnob
+	//@ts-ignore
+	window.currentControls = currentControls
 }
 
 function setScene() {
@@ -412,7 +445,7 @@ function setScene() {
  * @param {number} [index]
  */
 function updateKnob(updatedPart, index) {
-	currentKnob.update(KNOB_CONFIG, [updatedPart], index >= 0 ? index : null)
+	currentKnob.update(currentConfig, [updatedPart], index >= 0 ? index : null)
 }
 
 window.onload = start

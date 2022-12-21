@@ -45,14 +45,15 @@ export class CONTROLS {
 	/**
 	 * @param {CONTROLS_TYPES.BaseProperty} dictionary A template object to populate the controls. See controlTypes.d.ts
 	 * @param {HTMLElement} targetDOM The target dom into which control markup should be populated 
-	 * @param {Object} [sourceObj] The object the CONTROLS.js will be modifying. This can be an empty object too
+	 * @param {object} [sourceObj] The object the CONTROLS.js will be modifying. This can be an empty object too
 	 * @param {number} [historyLength] A non Zero value will basically enable history management
 	 */
 	constructor(dictionary, targetDOM, sourceObj, historyLength) {
 		this.config = sourceObj || {}
-		this.populateControls(dictionary, this.config, targetDOM)
-		this.manageHistory = !!historyLength
-		if (this.manageHistory) {
+		//ensure the target is empty
+		targetDOM.innerHTML = ""
+		this.controlsCollection = /** @type {CONTROLS_TYPES.ControlCollection} */ ({})
+		if (historyLength) {
 			const _this = this
 			this.history = new History(historyLength)
 			document.addEventListener("keypress", (event) => {
@@ -65,226 +66,165 @@ export class CONTROLS {
 				}
 			})
 		}
+		this.populateControls(dictionary, this.config, targetDOM, this.controlsCollection)
+	}
+
+	updateDOM() {
+		this._updateControlList(this.controlsCollection)
 	}
 
 	/**
-	 * @param {CONTROLS_TYPES.BaseProperty} dictionary 
-	 * @param {*} source
-	 * @param {HTMLElement} target
+	 * 
+	 * @param {CONTROLS_TYPES.ControlCollection} collection 
 	 */
-	populateControls(dictionary, source, target) {
+	_updateControlList(collection) {
+		const keys = Object.keys(collection)
+		for (let i = 0; i < keys.length; i++) {
+			const key = keys[i]
+			if (collection[key].constructor == Array) {
+				const ic = /** @type {CONTROLS_TYPES.ControlsList[]} */ (collection[key])
+				for (let j = 0; j < ic.length; j++) {
+					this._updateControlList(ic[j])
+				}
+			} else if (collection[key] instanceof Control) {
+				/** @type {Control} */
+				(collection[key]).updateDOM()
+			} else
+				this._updateControlList( /** @type {CONTROLS_TYPES.ControlsList} */ (collection[key]))
+		}
+	}
+
+	/**
+	 * @type {CONTROLS_TYPES.PopulatorMethod}
+	 */
+	populateControls(dictionary, source, target, controlsParent) {
 		for (const prop in dictionary.properties) {
 			if (!dictionary.properties[prop].onChange)
 				dictionary.properties[prop].onChange = dictionary.onChange
 			if (dictionary.properties[prop].type == "array") {
-				//create a master container
-				const innerTarget = this.createContainer(dictionary.properties[prop], prop, target)
+				const ic = /** @type {CONTROLS_TYPES.ControlsList[]} */ ([])
+				controlsParent[prop] = ic
 				if (!source[prop])
 					source[prop] = []
-				for (let i = 0; i < source[prop].length; i++) {
-					const innerInnerTarget = this.createContainer(dictionary.properties[prop], prop, innerTarget, i + 1)
-					if (!source[prop])
-						source[prop] = []
-					this.createDeleteButton(dictionary.properties[prop], source[prop], innerInnerTarget.parentElement)
-					this.populateControls(dictionary.properties[prop], source[prop][i], innerInnerTarget)
-				}
-				this.createAddButton(dictionary.properties[prop], source[prop], prop, innerTarget.parentElement)
-				this.setDraggable(innerTarget, source[prop], dictionary.onChange)
+				new ControlsGroup({
+					containerCreator: (...args) => this.createContainer.apply(this, args),
+					populator: (...args) => this.populateControls.apply(this, args),
+					prop: prop,
+					source: source[prop],
+					target: target,
+					controlsList: ic,
+					dictionary: dictionary,
+					history: this.history
+				})
 			} else if (!dictionary.properties[prop].properties) {
-				target.appendChild(this.createProperty(dictionary.properties[prop], source, prop))
+				const control = new Control(dictionary.properties[prop], source, prop, this.history)
+				controlsParent[prop] = control
+				target.appendChild(control.container)
 			} else {
 				if (!source[prop])
 					source[prop] = {}
-				this.populateControls(dictionary.properties[prop], source[prop], this.createContainer(dictionary.properties[prop], prop, target))
+				/** @type {CONTROLS_TYPES.ControlsList} */
+				const innerControls = {}
+				controlsParent[prop] = innerControls
+				this.populateControls(dictionary.properties[prop], source[prop],
+					this.createContainer(dictionary.properties[prop], prop, target, null), innerControls)
 			}
 		}
 	}
 
 	/**
-	 * @param {CONTROLS_TYPES.BaseProperty} dictionary 
-	 * @param {*} source 
-	 * @param {HTMLElement} target 
+	 * @type {CONTROLS_TYPES.ContainerCreatorMethod}
 	 */
-	createDeleteButton(dictionary, source, target) {
-		const innerTarget = target.querySelector(".controlHeader h2")
-		const deleteButton = document.createElement("button")
-		innerTarget.appendChild(deleteButton)
-		deleteButton.innerHTML = "-"
-		deleteButton.classList.add("controlAddButton")
-		const _this = this
-		deleteButton.addEventListener("pointerup", function(event) {
-			event.preventDefault()
-			event.stopPropagation()
-			const elements = target.parentElement.children
-			let deleteIndex = 0
-			for (let i = 0; i < elements.length; i++) {
-				if (elements[i] == target) {
-					deleteIndex = i
-				}
+	createContainer(dictionary, prop, target, index) {
+		const container = document.createElement("div")
+		container.classList.add("controlContainer", "controlCollapsed")
+
+		/**
+		 * @returns {number}
+		 */
+		function getIndex() {
+			const children = container.parentElement.querySelectorAll(":scope > .controlContainer")
+			for (let i = 0; children.length; i++) {
+				if (children[i] == container)
+					return i
 			}
-			const deletedEntry = _this.onArrayEntryRemove(source, deleteIndex, target, dictionary.onChange)
-
-			if (_this.manageHistory) {
-				_this.history.add(new HistoryState({
-					key: deleteIndex,
-					source: source,
-					restore: (forward) => {
-						if (forward)
-							_this.onArrayEntryRemove(source, deleteIndex, target, dictionary.onChange)
-						else
-							_this.reInsertDeletedEntry(dictionary, deletedEntry)
-					}
-				}))
-			}
-		})
-	}
-
-	/**
-	 * @param {CONTROLS_TYPES.BaseProperty} dictionary
-	 * @param {ArrayItemInfo}  entry
-	 */
-	reInsertDeletedEntry(dictionary, entry) {
-		const insertBeforeNode = entry.target.children[entry.index]
-		if (insertBeforeNode)
-			entry.target.insertBefore(entry.html, insertBeforeNode)
-		else
-			entry.target.appendChild(entry.html)
-		const changeF = dictionary.onChange
-		entry.source.splice(entry.index, 0, entry.item)
-		changeF && changeF(null, entry)
-	}
-
-	/**
-	 * @typedef {object} ArrayItemInfo
-	 * @property {*} item
-	 * @property {number} index
-	 * @property {HTMLElement} html
-	 * @property {HTMLElement} target
-	 * @property {any[]} source
-	 */
-
-	/**
-	 * @param {any[]} source 
-	 * @param {number} index 
-	 * @param {HTMLElement} target 
-	 * @param {CONTROLS_TYPES.BaseProperty["onChange"]} onChange 
-	 * @returns {ArrayItemInfo}
-	 */
-	onArrayEntryRemove(source, index, target, onChange) {
-		const deletedItem = source.splice(index, 1)[0]
-		const parentElement = target.parentElement
-		parentElement.removeChild(target)
-		onChange && onChange(null, source)
-		return {
-			item: deletedItem,
-			index: index,
-			source: source,
-			html: target,
-			target: parentElement
+			return null
 		}
-	}
 
-	/**
-	 * @param {CONTROLS_TYPES.BaseProperty} dictionary 
-	 * @param {*} source 
-	 * @param {string} prop
-	 * @param {HTMLElement} target 
-	 */
-	createAddButton(dictionary, source, prop, target) {
-		const buttonTarget = target.querySelector(".controlHeader h2")
-		const addButton = document.createElement("button")
-		buttonTarget.appendChild(addButton)
-		addButton.innerHTML = "+"
-		addButton.classList.add("controlAddButton")
-		const _this = this
-		addButton.addEventListener("pointerup", function(event) {
+		const header = document.createElement("div")
+		header.classList.add("controlHeader", "controlDisplaySpaceBetween")
+		header.addEventListener("pointerup", function(event) {
+			if (container.hasAttribute("data-draggged")) {
+				container.removeAttribute("data-dragged")
+				return
+			}
 			event.preventDefault()
 			event.stopPropagation()
-			/** @type {ArrayItemInfo} */
-			let newEntry = {}
-			newEntry.source = source
-
-			//generate an entry. Just duplicate the previous element if avaiable
-			if (source.length)
-				newEntry.item = JSON.parse(JSON.stringify(source[source.length - 1]))
-			else {
-				newEntry.item = {}
-				scrapeDictionaryForDefaults(dictionary, {})
-			}
-
-			newEntry.html = _this.onArrayEntryAdd(dictionary, source, newEntry.item, prop, target)
-			newEntry.index = source.length - 1
-			newEntry.target = /** @type {HTMLDivElement} */ (target.querySelector(".controlElementsContainer"))
-
-			if (_this.manageHistory) {
-				_this.history.add(new HistoryState({
-					key: prop,
-					source: source,
-					restore: (forward) => {
-						if (forward)
-							_this.reInsertDeletedEntry(dictionary, newEntry)
-						else {
-							const removedIndex = source.indexOf(newEntry.item)
-							const innerTarget = target.querySelector(".controlElementsContainer")
-								.querySelectorAll(".controlContainer")[removedIndex]
-							_this.onArrayEntryRemove(source, removedIndex,
-								/** @type {HTMLElement} */
-								(innerTarget),
-								dictionary.onChange)
-						}
-					}
-				}))
-			}
+			container.removeAttribute("draggable")
+			header.querySelector("button.controlCollapsor").dispatchEvent(new PointerEvent("pointerup"))
 		})
+		container.appendChild(header)
+		if (dictionary.headerHover) {
+			header.addEventListener("pointerenter", function() {
+				const index = getIndex()
+				if (index > -1)
+					dictionary.headerHover.enter(index)
+			})
+			header.addEventListener("pointerleave", function() {
+				const index = getIndex()
+				if (index > -1)
+					dictionary.headerHover.leave(index)
+			})
+		}
+		const labelElem = document.createElement("h2")
+		labelElem.innerHTML = (dictionary.label || prop).toUpperCase() +
+			(typeof index == "number" ? " " + index : "")
+
+		const collapsorButton = document.createElement("button")
+		collapsorButton.classList.add("controlCollapsor")
+		collapsorButton.addEventListener("pointerup", (event) => {
+			event.preventDefault()
+			event.stopPropagation()
+			container.classList.toggle("controlCollapsed")
+		})
+
+		header.appendChild(labelElem)
+		header.appendChild(collapsorButton)
+
+		const controlsContainer = document.createElement("div")
+		controlsContainer.classList.add("controlElementsContainer")
+		container.appendChild(controlsContainer)
+		target.appendChild(container)
+		if (dictionary.compact) {
+			controlsContainer.parentElement.classList.add("compact")
+			container.classList.remove("controlCollapsed")
+		}
+		return controlsContainer
 	}
 
 	/**
-	 * @param {CONTROLS_TYPES.BaseProperty} dictionary 
-	 * @param {*} source 
-	 * @param {*} newEntry 
-	 * @param {string} prop 
-	 * @param {HTMLElement} target
-	 * @returns {HTMLElement}
+	 * @returns {string}
 	 */
-	onArrayEntryAdd(dictionary, source, newEntry, prop, target) {
-		source.push(newEntry)
-		const innerTarget = /** @type {HTMLDivElement} */ (target.querySelector(".controlElementsContainer"))
-		const newContainer = this.createContainer(dictionary, prop, innerTarget, source.length)
-		this.createDeleteButton(dictionary, source, newContainer.parentElement)
-		this.populateControls(dictionary, newEntry, newContainer)
-		this.setDraggable(innerTarget, source, dictionary.onChange)
-		dictionary.onChange && dictionary.onChange(prop, source)
-		return newContainer.parentElement
+	getConfig() {
+		return JSON.stringify(this.config, null, 2)
 	}
+}
 
+
+
+
+
+
+export class Control {
 	/**
 	 * this is atomic property
 	 * @param {CONTROLS_TYPES.ControlType} propertyObj
 	 * @param {*} source 
 	 * @param {string} key
-	 * @returns {HTMLElement}
+	 * @param {History} history
 	 */
-	createProperty(propertyObj, source, key) {
-		const propertyContainer = document.createElement("div")
-		propertyContainer.classList.add("controlElementContainer", "controlDisplaySpaceBetween")
-		const labelElem = document.createElement("label")
-		labelElem.classList.add("controlLabel")
-		labelElem.innerHTML = propertyObj.label || makeStringHuman(key)
-		propertyContainer.appendChild(labelElem)
-		if (!propertyObj.type)
-			propertyObj.type = "slider"
-		/** @type {HTMLInputElement|HTMLSelectElement} */
-		let inputElement
-		/** @type {Range} */
-		let rangeElement
-
-		if (isNull(source[key]) && !isNull(propertyObj.default))
-			source[key] = JSON.parse(JSON.stringify(propertyObj.default))
-
+	constructor(propertyObj, source, key, history) {
 		const _this = this
-
-		/** @type {()=>void} */
-		let updateDOM
 
 		/**
 		 * @param {any} [newVal]
@@ -292,7 +232,7 @@ export class CONTROLS {
 		 */
 		function writeHistory(newVal, oldVal) {
 			if (areDifferent(oldVal, newVal)) {
-				_this.history.add(new HistoryState({
+				history.add(new HistoryState({
 					key: key,
 					source: source,
 					restore: (forward) => {
@@ -301,7 +241,7 @@ export class CONTROLS {
 						else
 							assignVal(source, key, oldVal)
 						propertyObj.onChange && propertyObj.onChange(key, source)
-						updateDOM()
+						_this.updateDOM()
 					}
 				}))
 			}
@@ -321,11 +261,33 @@ export class CONTROLS {
 			else
 				assignVal(source, key, newVal)
 
-			if (_this.manageHistory)
+			if (history)
 				debouncedHistoryWrite(newVal, oldVal)
 
 			propertyObj.onChange && propertyObj.onChange(key, source)
 		}
+
+		this.container = document.createElement("div")
+		this.container.classList.add("controlElementContainer", "controlDisplaySpaceBetween")
+		const labelElem = document.createElement("label")
+		labelElem.classList.add("controlLabel")
+		labelElem.innerHTML = propertyObj.label || makeStringHuman(key)
+		this.container.appendChild(labelElem)
+		if (!propertyObj.type)
+			propertyObj.type = "slider"
+
+		/** @type {HTMLInputElement|HTMLSelectElement} */
+		let inputElement
+
+		/** @type {Range} */
+		let rangeElement
+
+		if (isNull(source[key]) && !isNull(propertyObj.default))
+			source[key] = JSON.parse(JSON.stringify(propertyObj.default))
+
+		/** @type {()=>void} */
+		this.updateDOM
+
 
 		switch (propertyObj.type) {
 			case "slider":
@@ -338,21 +300,27 @@ export class CONTROLS {
 				if (propertyObj.inverseDirection)
 					inputElement.classList.add("controlInverse")
 
-				updateDOM = function() {
+				this.updateDOM = function() {
 					const tfOut = propertyObj.transformOut || ((n) => n)
 					inputElement.value = tfOut(source[key] || 0) + ""
 				}
 
 				const tf = propertyObj.transformIn || ((t) => t)
 
-				inputElement.addEventListener("input", (event) => {
+				/**
+				 * @param {InputEvent} event 
+				 */
+				const onInput = (event) => {
 					if (event.inputType == "historyUndo")
-						_this.history.moveBack()
+						history && history.moveBack()
 					else if (event.inputType == "historyRedo")
-						_this.history.moveForward()
+						history && history.moveForward()
 					else
 						internalChange(tf(parseFloat(inputElement.value)))
-				})
+				}
+
+
+				inputElement.addEventListener("input", onInput)
 				break
 			}
 			case "toggle":
@@ -361,7 +329,7 @@ export class CONTROLS {
 				inputElement.checked = source[key]
 				inputElement.addEventListener("input", () => internalChange( /** @type {HTMLInputElement} */ (inputElement).checked))
 
-				updateDOM = function() {
+				this.updateDOM = function() {
 					/** @type {HTMLInputElement} */
 					(inputElement).checked = source[key]
 				}
@@ -369,22 +337,22 @@ export class CONTROLS {
 			case "color":
 				inputElement = document.createElement("input")
 				inputElement.type = "color"
-				updateDOM = function() {
+				this.updateDOM = function() {
 					inputElement.value = source[key] || "#000000"
 				}
 				inputElement.addEventListener("input", () => { internalChange(inputElement.value) })
 				break
 			case "range":
 				if (!source[key])
-					source[key] = [0.25, 0.75]
+					source[key] = [0, 1]
 				rangeElement = new Range(propertyObj, source, key, internalChange)
-				updateDOM = () => rangeElement.updateDOM()
+				this.updateDOM = () => rangeElement.updateDOM()
 				break
 			case "gradient":
 				if (!source[key])
 					source[key] = [{ offset: 0.5, color: "#cccccc" }]
 				rangeElement = new Range(propertyObj, source, key, internalChange)
-				updateDOM = () => rangeElement.updateDOM()
+				this.updateDOM = () => rangeElement.updateDOM()
 				break
 			case "option": {
 				inputElement = document.createElement("select")
@@ -394,7 +362,7 @@ export class CONTROLS {
 					option.innerHTML = makeStringHuman(str)
 					inputElement.appendChild(option)
 				})
-				updateDOM = () => {
+				this.updateDOM = () => {
 					const optionIndex = propertyObj.options.indexOf(source[key])
 					inputElement.selectedIndex = optionIndex == -1 ? 0 : optionIndex
 				}
@@ -402,154 +370,18 @@ export class CONTROLS {
 				break
 			}
 		}
-		updateDOM()
 
 		if (inputElement) {
 			inputElement.classList.add("controlElement")
-			propertyContainer.appendChild(inputElement)
+			this.container.appendChild(inputElement)
+			this.element = inputElement
 		}
-		if (rangeElement)
-			propertyContainer.appendChild(rangeElement.element)
-
-		return propertyContainer
-	}
-
-	/**
-	 * @param {CONTROLS_TYPES.BaseProperty} dictionary
-	 * @param {string} prop
-	 * @param {HTMLElement} target
-	 * @param {number} [index]
-	 * @returns {HTMLElement} The new target to populate controls
-	 */
-	createContainer(dictionary, prop, target, index) {
-		const container = document.createElement("div")
-		container.classList.add("controlContainer", "controlCollapsed")
-
-		/**
-		 * @returns {number}
-		 */
-		function getIndex() {
-			const children = container.parentElement.querySelectorAll(":scope > .controlContainer")
-			for (let i = 0; children.length; i++) {
-				if (children[i] == container)
-					return i
-			}
-			return null
+		if (rangeElement) {
+			this.container.appendChild(rangeElement.element)
+			this.element = rangeElement
 		}
 
-		//header
-		const header = document.createElement("div")
-		header.classList.add("controlHeader", "controlDisplaySpaceBetween")
-		container.appendChild(header)
-		header.addEventListener("pointerup", function(event) {
-			if (container.hasAttribute("data-draggged")) {
-				container.removeAttribute("data-dragged")
-				return
-			}
-			event.preventDefault()
-			event.stopPropagation()
-			container.removeAttribute("draggable")
-			header.querySelector("button.controlCollapsor").dispatchEvent(new PointerEvent("pointerup"))
-		})
-		if (dictionary.headerHover) {
-			header.addEventListener("pointerenter", function() {
-				const index = getIndex()
-				if (index > -1)
-					dictionary.headerHover.enter(index)
-			})
-			header.addEventListener("pointerleave", function() {
-				const index = getIndex()
-				if (index > -1)
-					dictionary.headerHover.leave(index)
-			})
-		}
-
-		const labelElem = document.createElement("h2")
-		labelElem.innerHTML = (dictionary.label || prop).toUpperCase() +
-			(typeof index == "number" ? " " + index : "")
-
-		const collapsorButton = document.createElement("button")
-		collapsorButton.classList.add("controlCollapsor")
-		collapsorButton.addEventListener("pointerup", (event) => {
-			event.preventDefault()
-			event.stopPropagation()
-			container.classList.toggle("controlCollapsed")
-		})
-
-		header.appendChild(labelElem)
-		header.appendChild(collapsorButton)
-
-		const controlsContainer = document.createElement("div")
-		controlsContainer.classList.add("controlElementsContainer")
-		container.appendChild(controlsContainer)
-
-		target.appendChild(container)
-
-		return controlsContainer
-	}
-
-	/**
-	 * @returns {string}
-	 */
-	getConfig() {
-		return JSON.stringify(this.config, null, 2)
-	}
-
-	/**
-	 * 
-	 * @param {HTMLElement} parentElement 
-	 * @param {any[]} array 
-	 * @param {CONTROLS_TYPES.BaseProperty["onChange"]} cb
-	 */
-	setDraggable(parentElement, array, cb) {
-		const children = /** @type {NodeListOf<HTMLElement>} */
-			(parentElement.querySelectorAll(":scope > .controlContainer"))
-
-		for (let i = 0; i < children.length; i++) {
-			const element = children[i]
-			if (element.hasAttribute("data-made-draggable"))
-				continue
-
-			element.setAttribute("data-made-draggable", "true")
-			const controlHeader = element.querySelector(".controlHeader")
-			controlHeader.addEventListener("pointerdown", (event) => {
-				if (event.target == controlHeader)
-					element.setAttribute("draggable", "true")
-			})
-
-			element.ondragstart = () => {
-				this.currentDraggedElement = element
-				element.setAttribute("data-dragged", "true")
-			}
-			element.ondragover = (event) => event.preventDefault()
-			element.ondragend = () => element.removeAttribute("draggable")
-			element.ondrop = () => {
-				if (this.currentDraggedElement != element &&
-					this.currentDraggedElement.parentElement == element.parentElement) {
-					let currentPosition = 0,
-						toPosition = 0
-					/**
-					 * This because the children order might have already updated with prior sorts
-					 */
-					const updatedChildren = (parentElement.querySelectorAll(":scope > .controlContainer"))
-					for (let j = 0; j < updatedChildren.length; j++) {
-						if (updatedChildren[j] == this.currentDraggedElement)
-							currentPosition = j
-						if (updatedChildren[j] == element)
-							toPosition = j
-					}
-					const removedObj = array.splice(currentPosition, 1)[0]
-					array.splice(toPosition, 0, removedObj)
-					if (currentPosition < toPosition)
-						parentElement.insertBefore(this.currentDraggedElement, element.nextSibling)
-					else
-						parentElement.insertBefore(this.currentDraggedElement, element)
-					this.currentDraggedElement.removeAttribute("data-dragged")
-					cb && cb(null, null)
-				}
-			}
-			element.removeAttribute("draggable")
-		}
+		this.updateDOM()
 	}
 }
 
@@ -897,6 +729,282 @@ function debounce(func, time = 200, forceExecuteTime = Infinity) {
 			elapsedTime = 0
 		} else
 			timeoutID = window.setTimeout(() => func.apply(this, args), time)
+	}
+}
+
+
+class ControlsGroup {
+	/**
+	 * @typedef {object} ControlsGroupConfig
+	 * @property {any} source 
+	 * @property {string} prop 
+	 * @property {CONTROLS_TYPES.BaseProperty} dictionary 
+	 * @property {CONTROLS_TYPES.ControlsList[]} controlsList
+	 * @property {HTMLElement} target
+	 * @property {CONTROLS_TYPES.PopulatorMethod} populator
+	 * @property {CONTROLS_TYPES.ContainerCreatorMethod} containerCreator
+	 * @property {History} history
+	 */
+
+	/**
+	 * @param {ControlsGroupConfig} config
+	 */
+	constructor(config) {
+		this.containerCreator = config.containerCreator
+		this.source = config.source
+		this.prop = config.prop
+		this.dictionary = config.dictionary
+		this.controlsList = config.controlsList
+		this.populator = config.populator
+		this.history = config.history
+
+		//create a master container
+		const container = this.containerCreator(this.dictionary.properties[this.prop],
+			config.prop, config.target)
+		//master container cannot be compact
+		container.parentElement.classList.remove("compact")
+
+		for (let i = 0; i < this.source.length; i++) {
+			const innerInnerTarget = this.containerCreator(this.dictionary.properties[this.prop],
+				this.prop, container, i + 1)
+			this.createDeleteButton(innerInnerTarget.parentElement)
+			/** @type {CONTROLS_TYPES.ControlsList} */
+			const innerControls = {}
+			this.controlsList.push(innerControls)
+			this.populator(this.dictionary.properties[this.prop], this.source[i],
+				innerInnerTarget, innerControls)
+		}
+		if (!this.source.length)
+			container.parentElement.querySelector(".controlCollapsor").classList.add("hidden")
+		this.createAddButton(this.dictionary.properties[this.prop], container.parentElement)
+		this.setDraggable(container, this.dictionary.onChange)
+	}
+
+	/**
+	 * @param {HTMLElement} target 
+	 */
+	createDeleteButton(target) {
+		const dictionary = this.dictionary.properties[this.prop]
+		const source = this.source
+		let innerTarget = target.querySelector(".controlHeader h2")
+		if(dictionary.compact)
+			innerTarget = target.querySelector(".controlElementsContainer")
+		const deleteButton = document.createElement("button")
+		innerTarget.appendChild(deleteButton)
+		deleteButton.innerHTML = "-"
+		deleteButton.classList.add("controlAddButton")
+		const _this = this
+		deleteButton.addEventListener("pointerup", function(event) {
+			event.preventDefault()
+			event.stopPropagation()
+			const elements = target.parentElement.children
+			let deleteIndex = 0
+			for (let i = 0; i < elements.length; i++) {
+				if (elements[i] == target) {
+					deleteIndex = i
+				}
+			}
+			const deletedEntry = _this.onEntryRemove(deleteIndex, target, dictionary.onChange)
+
+			if (_this.history) {
+				_this.history.add(new HistoryState({
+					key: deleteIndex,
+					source: source,
+					restore: (forward) => {
+						if (forward)
+							_this.onEntryRemove(deleteIndex, target, dictionary.onChange)
+						else
+							_this.reInsertDeletedEntry(dictionary, deletedEntry)
+					}
+				}))
+			}
+		})
+	}
+
+	/**
+	 * @param {CONTROLS_TYPES.BaseProperty} dictionary
+	 * @param {ArrayItemInfo}  entry
+	 */
+	reInsertDeletedEntry(dictionary, entry) {
+		const insertBeforeNode = entry.target.children[entry.index]
+		if (insertBeforeNode)
+			entry.target.insertBefore(entry.html, insertBeforeNode)
+		else
+			entry.target.appendChild(entry.html)
+		const changeF = dictionary.onChange
+		this.source.splice(entry.index, 0, entry.item)
+		this.controlsList.splice(entry.index, 0, entry.controlsList)
+		entry.target.parentElement.querySelector(".controlCollapsor").classList.remove("hidden")
+		changeF && changeF(null, entry)
+	}
+
+	/**
+	 * @typedef {object} ArrayItemInfo
+	 * @property {*} item
+	 * @property {number} index
+	 * @property {HTMLElement} html
+	 * @property {HTMLElement} target
+	 * @property {CONTROLS_TYPES.ControlsList} controlsList
+	 */
+
+	/**
+	 * @param {number} index 
+	 * @param {HTMLElement} target 
+	 * @param {CONTROLS_TYPES.BaseProperty["onChange"]} onChange 
+	 * @returns {ArrayItemInfo}
+	 */
+	onEntryRemove(index, target, onChange) {
+		const deletedItem = this.source.splice(index, 1)[0]
+		const parentElement = target.parentElement
+		if (this.source.length == 0)
+			target.parentElement.parentElement.querySelector(".controlCollapsor").classList.add("hidden")
+		parentElement.removeChild(target)
+		onChange && onChange(null, this.source)
+		return {
+			item: deletedItem,
+			index: index,
+			html: target,
+			target: parentElement,
+			controlsList: this.controlsList.splice(index, 1)[0]
+		}
+	}
+
+	/**
+	 * @param {CONTROLS_TYPES.BaseProperty} dictionary 
+	 * @param {HTMLElement} target 
+	 */
+	createAddButton(dictionary, target) {
+		const buttonTarget = target.querySelector(".controlHeader h2")
+		const addButton = document.createElement("button")
+		buttonTarget.appendChild(addButton)
+		addButton.innerHTML = "+"
+		addButton.classList.add("controlAddButton")
+		const _this = this
+		addButton.addEventListener("pointerup", function(event) {
+			event.preventDefault()
+			event.stopPropagation()
+			/** @type {ArrayItemInfo} */
+			let newEntry = {}
+
+			//generate an entry. Just duplicate the previous element if avaiable
+			if (_this.source.length)
+				newEntry.item = JSON.parse(JSON.stringify(_this.source[_this.source.length - 1]))
+			else {
+				newEntry.item = {}
+				scrapeDictionaryForDefaults(dictionary, {})
+			}
+
+			newEntry.html = _this.onEntryAdd(dictionary, newEntry.item, target)
+			newEntry.index = _this.source.length - 1
+			newEntry.target = /** @type {HTMLDivElement} */ (target.querySelector(".controlElementsContainer"))
+			newEntry.controlsList = _this.controlsList[_this.controlsList.length - 1]
+
+			if (_this.history) {
+				_this.history.add(new HistoryState({
+					key: _this.prop,
+					source: _this.source,
+					restore: (forward) => {
+						if (forward)
+							_this.reInsertDeletedEntry(dictionary, newEntry)
+						else {
+							const removedIndex = _this.source.indexOf(newEntry.item)
+							const innerTarget = target.querySelector(".controlElementsContainer")
+								.querySelectorAll(".controlContainer")[removedIndex]
+							_this.onEntryRemove(removedIndex,
+								/** @type {HTMLElement} */
+								(innerTarget),
+								dictionary.onChange)
+						}
+					}
+				}))
+			}
+		})
+	}
+
+	/**
+	 * @param {CONTROLS_TYPES.BaseProperty} dictionary 
+	 * @param {*} newEntry 
+	 * @param {HTMLElement} target
+	 * @returns {HTMLElement}
+	 */
+	onEntryAdd(dictionary, newEntry, target) {
+		this.source.push(newEntry)
+		const innerTarget = /** @type {HTMLDivElement} */ (target.querySelector(".controlElementsContainer"))
+		const newContainer = this.containerCreator(dictionary, this.prop,
+			innerTarget, this.source.length)
+		this.createDeleteButton(newContainer.parentElement)
+		/** @type {CONTROLS_TYPES.ControlsList} */
+		const innerControls = {}
+		this.controlsList.push(innerControls)
+		this.populator(dictionary, newEntry, newContainer, innerControls)
+		this.setDraggable(innerTarget, dictionary.onChange)
+		dictionary.onChange && dictionary.onChange(this.prop, this.source)
+		const collapsorButton = target.querySelector(".controlCollapsor")
+		collapsorButton.classList.remove("hidden")
+		//show the created entry
+		target.classList.remove("controlCollapsed")
+		newContainer.parentElement.classList.remove("controlCollapsed")
+		return newContainer.parentElement
+	}
+
+	/**
+	 * 
+	 * @param {HTMLElement} parentElement 
+	 * @param {CONTROLS_TYPES.BaseProperty["onChange"]} cb
+	 */
+	setDraggable(parentElement, cb) {
+		const children = /** @type {NodeListOf<HTMLElement>} */
+			(parentElement.querySelectorAll(":scope > .controlContainer"))
+
+		for (let i = 0; i < children.length; i++) {
+			const element = children[i]
+			if (element.hasAttribute("data-made-draggable"))
+				continue
+
+			element.setAttribute("data-made-draggable", "true")
+			const controlHeader = element.querySelector(".controlHeader")
+			controlHeader.addEventListener("pointerdown", (event) => {
+				if (event.target == controlHeader)
+					element.setAttribute("draggable", "true")
+			})
+
+			element.ondragstart = () => {
+				this.currentDraggedElement = element
+				element.setAttribute("data-dragged", "true")
+			}
+			element.ondragover = (event) => event.preventDefault()
+			element.ondragend = () => element.removeAttribute("draggable")
+			const source = this.source
+			const cl = this.controlsList
+			element.ondrop = () => {
+				if (this.currentDraggedElement != element &&
+					this.currentDraggedElement.parentElement == element.parentElement) {
+					let currentPosition = 0,
+						toPosition = 0
+					/**
+					 * This because the children order might have already updated with prior sorts
+					 */
+					const updatedChildren = (parentElement.querySelectorAll(":scope > .controlContainer"))
+					for (let j = 0; j < updatedChildren.length; j++) {
+						if (updatedChildren[j] == this.currentDraggedElement)
+							currentPosition = j
+						if (updatedChildren[j] == element)
+							toPosition = j
+					}
+					const removedObj = source.splice(currentPosition, 1)[0]
+					source.splice(toPosition, 0, removedObj)
+					const removedCL = cl.splice(currentPosition, 1)[0]
+					cl.splice(toPosition, 0, removedCL)
+					if (currentPosition < toPosition)
+						parentElement.insertBefore(this.currentDraggedElement, element.nextSibling)
+					else
+						parentElement.insertBefore(this.currentDraggedElement, element)
+					this.currentDraggedElement.removeAttribute("data-dragged")
+					cb && cb(null, null)
+				}
+			}
+			element.removeAttribute("draggable")
+		}
 	}
 }
 
