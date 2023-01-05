@@ -22,14 +22,14 @@
 				0.01,
 				0.98
 			],
-			"sizeX": 1,
-			"sizeY": 1,
+			"width": 1,
+			"height": 1,
 			"depth": 0.31,
 			"shape": "pyramid",
 			"verticalOffset": 0.75,
 			"verticalSpacing": 0.5,
-			"radialCount": 140,
-			"depthSmoothing": 0.28,
+			"columns": 140,
+			"taper": 0.28,
 			"shapeRotation": 0.7853981633974483
 		}]
 	}

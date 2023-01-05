@@ -16,6 +16,9 @@
 <body>
 	<div id="configurationPanel">
 		<div id="permaContainer">
+			<input type="file" accept="application/json" id="openConfig" class="icon-file globalButton">
+			<button id="downloadSTL" class="icon-download icon-with-text icon-text-stl globalButton"></button>
+			<button id="downloadConfig" class="icon-download icon-with-text icon-text-json globalButton"></button>
 			<select id="templateSelector">
 				<option value="none">Templates</option>
 			</select>
@@ -28,21 +31,14 @@
 				<button id="undoButton" title="undo" class="altFont">&lt;</button>
 				<button id="redoButton" title="redo" class="altFont">&gt;</button>
 				<button id="resetButton">Reset</button>
+				<label for="draftModeToggle"><input id="draftModeToggle" type="checkbox"> Draft </label>
 			</div>
 		</div>
 		<div id="controlsContainer"></div>
 	</div>
 	<div id="drawingContainer"><canvas id="mainCanvas"></canvas></div>
-	<button id="downloadSTL" class="icon-download icon-with-text icon-text-stl globalButton"></button>
 	<div id="pageInformation">
-		This is work in progress. STL files are no good for application.
-		</br>
-		TODO:
-		<ul>
-			<li> Input Boxes for controls </li>
-			<li> Threads, slots, teeth in screw hole </li>
-			<li> Body surface features </li>
-		</ul>
+		Except subtractive feature, mostly useful now.
 	</div>
 </body>
 

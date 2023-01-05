@@ -288,7 +288,6 @@ export class Control {
 		/** @type {()=>void} */
 		this.updateDOM
 
-
 		switch (propertyObj.type) {
 			case "slider":
 			case "number": {
@@ -380,6 +379,9 @@ export class Control {
 			this.container.appendChild(rangeElement.element)
 			this.element = rangeElement
 		}
+
+		if (propertyObj.tip)
+			this.container.title = propertyObj.tip
 
 		this.updateDOM()
 	}
@@ -548,14 +550,16 @@ class Range {
  */
 function scrapeDictionaryForDefaults(dictionary, obj) {
 	if (dictionary.properties) {
+		const masterDefaults = dictionary.default
 		for (let key in dictionary.properties) {
 			const propertyObj = dictionary.properties[key]
-			if (Object.prototype.hasOwnProperty.call(propertyObj, "default"))
+			if (propertyObj.default != undefined)
 				obj[key] = propertyObj.default
 			else if (Object.prototype.hasOwnProperty.call(propertyObj, "properties")) {
 				obj[key] = {}
 				scrapeDictionaryForDefaults(propertyObj, obj[key])
-			}
+			} else if (masterDefaults && Object.prototype.hasOwnProperty.call(masterDefaults, key))
+				obj[key] = masterDefaults[key]
 		}
 	}
 }
@@ -787,7 +791,7 @@ class ControlsGroup {
 		const dictionary = this.dictionary.properties[this.prop]
 		const source = this.source
 		let innerTarget = target.querySelector(".controlHeader h2")
-		if(dictionary.compact)
+		if (dictionary.compact)
 			innerTarget = target.querySelector(".controlElementsContainer")
 		const deleteButton = document.createElement("button")
 		innerTarget.appendChild(deleteButton)
@@ -891,7 +895,7 @@ class ControlsGroup {
 				newEntry.item = JSON.parse(JSON.stringify(_this.source[_this.source.length - 1]))
 			else {
 				newEntry.item = {}
-				scrapeDictionaryForDefaults(dictionary, {})
+				scrapeDictionaryForDefaults(dictionary, newEntry.item)
 			}
 
 			newEntry.html = _this.onEntryAdd(dictionary, newEntry.item, target)

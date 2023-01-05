@@ -33,10 +33,13 @@
 	}],
 	"surface": {
 		"splines": [{
-			"count": 16,
+			"count": 12,
 			"height": 5,
 			"width": 10,
-			"range": [0, 0.772972972972973]
+			"range": [0, 0.772972972972973],
+			"bottomScale": 0,
+			"scaleSmoothing": 0.35,
+			"taperWidth": true
 		}]
 	}
 }

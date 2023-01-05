@@ -69,7 +69,8 @@ const SCHEMA = {
 				"segments": {
 					"type": "array",
 					"compact": true,
-					"properties": {}
+					"properties": {},
+					"tip": "Segments define the side profile of the knob"
 				}
 			},
 			"onChange": () => { updateKnob("body") }
@@ -79,7 +80,8 @@ const SCHEMA = {
 				"segments": {
 					"type": "array",
 					"compact": true,
-					"properties": {}
+					"properties": {},
+					"tip": "Segments define the profile of the internal hole."
 				}
 			},
 			"onChange": () => { updateKnob("screwHole") }
@@ -87,7 +89,16 @@ const SCHEMA = {
 		pointers: {
 			"type": "array",
 			"properties": {},
-			"onChange": (key, c) => { updateKnob("pointers", currentConfig.pointers.indexOf(c)) }
+			"onChange": (key, c) => { updateKnob("pointers", currentConfig.pointers.indexOf(c)) },
+			"default": {
+				angle: 0,
+				height: 10,
+				length: 8,
+				position: 0.9,
+				radialOffset: 10,
+				widthEnd: 0.03490658503988659,
+				widthStart: 0.5235987755982988
+			}
 		},
 		surface: {
 			"properties": {
@@ -102,7 +113,22 @@ const SCHEMA = {
 							"type": "range",
 							"min": 0,
 							"max": 1,
+							"tip": "Span of the knurling along the height of the knob."
 						}
+					},
+					default: {
+						"range": [
+							0.05,
+							0.95
+						],
+						"width": 1,
+						"height": 1,
+						"depth": 0.3,
+						"shape": "pyramid",
+						"verticalOffset": 0.75,
+						"verticalSpacing": 0.5,
+						"columns": 140,
+						"shapeRotation": 0.7853981633974483
 					},
 					"onChange": (key, c) => {
 						updateKnob("knurling", currentConfig.surface.knurling.indexOf(c))
@@ -111,14 +137,26 @@ const SCHEMA = {
 				splines: {
 					"type": "array",
 					"properties": {
-						"substractive": {
-							"type": "toggle"
+						"subtractive": {
+							"type": "toggle",
+							"tip": "When checked splines are cut on the body"
 						},
 						"range": {
 							"type": "range",
 							"min": 0,
 							"max": 1
+						},
+						"taperWidth": {
+							"type": "toggle",
+							"tip": "By default only height is scaled. Enable this to taper width/thickness as well."
 						}
+					},
+					"default": {
+						count: 5,
+						height: 3,
+						range: [0, 1],
+						rootThickness: 0.5235987755982988,
+						thickness: 0.17453292519943295,
 					},
 					onChange: (key, c) => {
 						updateKnob("splines", currentConfig.surface.splines.indexOf(c))
@@ -130,11 +168,16 @@ const SCHEMA = {
 						"range": {
 							"type": "range",
 							"min": 0,
-							"max": 1
+							"max": 1,
+							"tip": "Span of the threads along the external profile"
 						},
 						"leftHanded": {
-							"type": "toggle"
+							"type": "toggle",
+							"tip": "direction of winding"
 						}
+					},
+					"default": {
+						pitch: 2.5
 					},
 					onChange: (key, c) => {
 						updateKnob("threads", currentConfig.surface.threads.indexOf(c))
@@ -147,77 +190,81 @@ const SCHEMA = {
 
 const SLIDERS = {
 	body: {
-		height: [0.1, 100],
-		sides: [0, 25, 1],
+		height: [0.1, 100, null, "Sets the overall height of the knob"],
+		sides: [0, 25, 1, "Number of faces radially. Use high number for a smooth lathe"],
 		segments: {
-			radius: [3, 100],
-			height: [0, 1],
-			smoothing: [-1, 1]
+			radius: [3, 100, null, "Radius"],
+			height: [0, 1, null, "Percentage position along the height. Enter values in range [0, 1]"],
+			smoothing: [-1, 1, null, "Curve the side profile. Negatives values curve inward [-1, 1]."]
 		}
 	},
 	screwHole: {
-		sides: [0, 25, 1],
-		angle: [0, 360, 0.5],
+		sides: [0, 25, 1, "Number of internal faces radially."],
+		angle: [0, 360, 0.5, "The angle offset. Useful when hole isn't a smooth lathe."],
 		segments: {
 			radius: [3, 100],
-			height: [0, 1],
-			smoothing: [-1, 1]
+			height: [0, 1, null, "Percentage position along the height of the knob."],
+			smoothing: [-1, 1, null, "Curve the side profile. Negatives values curve inward [-1, 1]."]
 		},
 		splines: {
-			count: [0, 40, 1],
-			thickness: [0, 120, 0.5],
-			rootThickness: [1, 120, 0.5],
-			width: [0, 10],
-			smoothing: [-1, 1],
-			height: [0.1, 5],
-			topScale: [0, 1],
-			bottomScale: [0, 1],
-			scaleSmoothing: [-0.75, 0.75],
-			angle: [-90, 90],
-			angleSmoothing: [-1, 1],
+			count: [0, 40, 1, "Number of splines radially"],
+			thickness: [0, 120, 0.5, "Thickness at the tip of the spline profile in degrees."],
+			rootThickness: [1, 120, 0.5, "Thickness at the base of the spline profile in degrees."],
+			smoothing: [-1, 1, null, "Smooth the spline profile when tip and root thickness are different."],
+			width: [0, 10, null, "Setting this ignores thickness and creates spline with a constant width."],
+			height: [0.1, 5, null, "Optional. When not set creates shortest possible spline. Useful to create flat sections of d-shafts."],
+			topScale: [0, 1, null, "Use <1 to taper at the top"],
+			bottomScale: [0, 1, null, "Use <1 to taper at the bottom"],
+			scaleSmoothing: [-0.75, 0.75, null, "Use in conjunction with top/bottom scale to smooth the scaling along the profile."],
+			angle: [-90, 90, 0.5, "Curve the spline radially"],
+			angleSmoothing: [-1, 1, null, "Smooth the curve angle [-1,1]"],
 		},
 		threads: {
 			pitch: [0.1, 10],
-			depth: [0.1, 10]
+			depth: [0.1, 10, null, "Optional. When not set depth is computed as per metric standards."],
+			taperTop: [0, 0.5, null, "Start tapering at percentage position from top in the thread range"],
+			taperBottom: [0, 0.5, null, "Start tapering at percentage position from bottom in the thread range"]
 		}
 	},
 	pointers: {
-		height: [0, 100],
-		angle: [0, 360, 0.5],
-		position: [0, 1], // The y position relative to  height,
-		radialOffset: [0, 100],
-		length: [0, 100],
-		widthStart: [0, 30, 0.5],
-		widthEnd: [0, 30, 0.5]
+		height: [0, 100, null, "Absolute height of the pointer"],
+		angle: [0, 360, 0.5, "Angle offset from body"],
+		position: [0, 1, null, "Percentage position along the height of the body [0,1]"],
+		radialOffset: [0, 100, null, "Radial distance from the center of the knob."],
+		length: [0, 100, null],
+		widthStart: [0, 30, 0.5, "In degrees."],
+		widthEnd: [0, 30, 0.5, "In degrees."]
 	},
 	surface: {
 		knurling: {
-			sizeX: [0, 3],
-			sizeY: [0, 5],
-			depth: [0, 4],
-			verticalSpacing: [-4, 4],
-			radialCount: [1, 200, 1],
-			verticalOffset: [0, 10],
-			rise: [0.5, 1],
+			width: [0, 3, null, "The width of the individual knurling shape"],
+			height: [0, 5, null, "Height of the individual knurling shape"],
+			depth: [0, 4, null],
+			verticalSpacing: [-4, 4, null, "The space between indiviual shapes"],
+			columns: [1, 200, 1],
+			verticalOffset: [0, 10, null, "Offset between columns of shapes"],
+			rise: [0.5, 1, null, "Not to be confused with depth. Shapes are tagent to the surface with flat base. With values <1 they can become flush", 0.9],
 			shapeRotation: [-180, 180, 0.5],
-			depthSmoothing: [0, 0.5]
+			taper: [0, 0.5, null, "Use this to taper knurling at the boundaries [0, 0.5]. Value is percentage of range from boundaries."]
 		},
 		splines: {
-			count: [0, 40, 1],
-			thickness: [0, 120, 0.5],
-			rootThickness: [1, 120, 0.5],
-			width: [0, 10],
-			smoothing: [-1, 1],
-			height: [0.1, 5],
-			topScale: [0, 1],
-			bottomScale: [0, 1],
-			scaleSmoothing: [-0.75, 0.75],
-			angle: [-90, 90, 0.5],
-			angleSmoothing: [-1, 1],
+			count: [0, 40, 1, "Number of splines radially"],
+			thickness: [0, 120, 0.5, "Thickness at the tip of the spline profile in degrees."],
+			rootThickness: [1, 120, 0.5, "Thickness at the base of the spline profile in degrees."],
+			smoothing: [-1, 1, null, "Smooth the spline profile when tip and root thickness are different."],
+			width: [0, 10, null, "Setting this ignores thickness and creates spline with a constant width."],
+			height: [0.1, 5, null],
+			topScale: [0, 1, null, "Use <1 to taper at the top", 1],
+			bottomScale: [0, 1, null, "Use <1 to taper at the bottom", 1],
+			scaleSmoothing: [-0.75, 0.75, null, "Use in conjunction with top/bottom scale to smooth the scaling along the profile."],
+			angle: [-90, 90, 0.5, "Curve the spline radially"],
+			angleSmoothing: [-1, 1, null, "Smooth the curve angle [-1,1]"],
 		},
 		threads: {
 			pitch: [0.1, 10],
-			depth: [0.1, 10]
+			depth: [0.1, 10, null, "Optional. When not set depth is computed as per metric standards."],
+			taperTop: [0, 0.5, null, "Start tapering at percentage position from top in the thread range"],
+			taperBottom: [0, 0.5, null, "Start tapering at percentage position from bottom in the thread range"]
 		}
 	}
 }
@@ -233,6 +280,8 @@ const INCHES_TO_MM = 25.4
 const ANGLE_TYPES = ["thickness", "rootThickness", "widthStart",
 	"shapeRotation", "widthEnd", "angle"
 ]
+/** @type {import("./knob.js").KNOB_CONFIG} */
+let initialConfigState
 
 function start() {
 	setDOM()
@@ -241,20 +290,30 @@ function start() {
 	loadKnobFrom(knobSelector.options[1].value)
 }
 
-
 function setDOM() {
 	fillSchema(SLIDERS, SCHEMA)
 	SCHEMA.properties.screwHole.properties["splines"] = {
 		"type": "array",
 		"properties": {
-			"substractive": {
-				"type": "toggle"
+			"subtractive": {
+				"type": "toggle",
+				"tip": "When checked splines are cut on the body"
 			},
 			"range": {
 				"type": "range",
 				"min": 0,
 				"max": 1,
+			},
+			"taperWidth": {
+				"type": "toggle"
 			}
+		},
+		default: {
+			count: 6,
+			height: 2,
+			range: [0, 1],
+			rootThickness: 0.5235987755982988,
+			thickness: 0.17453292519943295,
 		},
 		"onChange": (key, c) => {
 			updateKnob("internalSplines", currentConfig.screwHole.splines.indexOf(c))
@@ -266,15 +325,23 @@ function setDOM() {
 			"range": {
 				"type": "range",
 				"min": 0,
-				"max": 1,
+				"max": 1
 			},
 			"leftHanded": {
-				"type": "toggle"
+				"type": "toggle",
+				"tip": "Winding direction of threads."
 			}
+		},
+		"default": {
+			pitch: 2.5
 		},
 		"onChange": (key, c) => {
 			updateKnob("internalThreads", currentConfig.screwHole.threads.indexOf(c))
 		}
+	}
+	SCHEMA.properties.surface.properties["knurling"].properties["taperAll"] = {
+		"type": "toggle",
+		"tip": "Scale all dimensions. When disabled only the depth is scaled."
 	}
 	fillSchema(SLIDERS.screwHole.threads, SCHEMA.properties.screwHole.properties["threads"])
 	fillSchema(SLIDERS.screwHole.splines, SCHEMA.properties.screwHole.properties["splines"])
@@ -305,7 +372,9 @@ function fillSchema(source, schemaTarget) {
 				max: source[key][1],
 				step: source[key][2],
 				transformIn: isAngleType ? toRadians : toMM,
-				transformOut: isAngleType ? toDegrees : toCurrentUnits
+				transformOut: isAngleType ? toDegrees : toCurrentUnits,
+				tip: source[key][3],
+				default: source[key][4]
 			}
 		}
 	}
@@ -366,7 +435,27 @@ function onResize() {
 
 function setBindings() {
 	window.addEventListener("resize", onResize)
+	const inputElement = /** @type {HTMLInputElement} */ (document.getElementById("openConfig"))
+	inputElement.addEventListener("input", function() {
+		let reader = new FileReader()
+		/**
+		 * @param {Event} event 
+		 */
+		reader.onload = function(event) {
+			const fileContent = event.target.result
+			try {
+				const parsedObject = JSON.parse( /** @type {string} */ (fileContent))
+				setKnobForEditing(parsedObject)
+			} catch (e) {
+				console.log("Unable to read file")
+			} finally {
+				inputElement.value = null
+			}
+		}
+		reader.readAsText(inputElement.files[0])
+	})
 	document.getElementById("downloadSTL").addEventListener("click", () => { currentKnob.exportSTL(true) })
+	document.getElementById("downloadConfig").addEventListener("click", () => { currentKnob.exportJSON(true) })
 	document.getElementById("undoButton").addEventListener("click", () => {
 		const event = new KeyboardEvent("keypress", {
 			ctrlKey: true,
@@ -388,12 +477,19 @@ function setBindings() {
 		loadKnobFrom(src)
 	}
 	knobSelector.addEventListener("change", onKnobSelect)
-	document.getElementById("resetButton").addEventListener("click", onKnobSelect)
+	document.getElementById("resetButton").addEventListener("click", () => {
+		setKnobForEditing(initialConfigState)
+	})
 	document.querySelector("#unitsSelectorContainer").querySelectorAll("input").forEach(input => {
 		input.addEventListener("change", function() {
 			currentUnits = /** @type {"mm"|"cm"|"inch"} */ (input.value)
 			currentControls.updateDOM()
 		})
+	})
+	/** @type {HTMLInputElement} */
+	const draftModeToggle = document.querySelector("input#draftModeToggle")
+	draftModeToggle.addEventListener("input", () => {
+		currentKnob.setDraftMode(draftModeToggle.checked)
 	})
 }
 
@@ -419,6 +515,7 @@ function setKnobForEditing(config) {
 	 * We set the controls first becuase, it can help us with setting 
 	 * some defaults
 	 */
+	initialConfigState = JSON.parse(JSON.stringify(config))
 	currentConfig = config
 	currentControls = null
 	currentControls = new CONTROLS(SCHEMA, document.querySelector("#controlsContainer"), currentConfig, 1000)

@@ -47,10 +47,17 @@ div#pageInformation {
 	display: none;
 }
 
-.globalButton {
-	display: none
+#downloadSTL::after {
+	content: "↓STL"
 }
 
+#downloadConfig::after {
+	content: "↓JSON"
+}
+
+#openConfig {
+	width: 120px;
+}
 
 #configurationPanel {
 	float: left;

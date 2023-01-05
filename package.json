@@ -1,6 +1,6 @@
 {
 	"name": "knob-maker",
-	"version": "0.0.1",
+	"version": "0.1.0",
 	"source": "src/knob.js",
 	"main": "dist/knob.js",
 	"module": "dist/knob.module.js",
@@ -19,7 +19,9 @@
 	},
 	"scripts": {
 		"build": "parcel build && tsc --project jsconfig.json",
-		"start": "node startScript.js"
+		"start": "concurrently --kill-others \"npm run startServer\" \"npm run setupDemo\"",
+		"startServer": "node node_modules/http-server/bin/http-server ./demo",
+		"setupDemo": "node startScript.js"
 	},
 	"eslintConfig": {
 		"extends": [
@@ -86,22 +88,25 @@
 		"plugins": [
 			"jsdoc"
 		],
-		"overrides": [{
-			"files": [
-				"startScript.js"
-			],
-			"env": {
-				"node": true,
-				"browser": false
-			},
-			"parserOptions": {
-				"ecmaVersion": 8
+		"overrides": [
+			{
+				"files": [
+					"startScript.js"
+				],
+				"env": {
+					"node": true,
+					"browser": false
+				},
+				"parserOptions": {
+					"ecmaVersion": 8
+				}
 			}
-		}]
+		]
 	},
 	"license": "MIT",
 	"devDependencies": {
 		"chokidar": "^3.5.3",
+		"concurrently": "^7.6.0",
 		"eslint": "^8.22.0",
 		"eslint-plugin-jsdoc": "^39.3.6",
 		"http-server": "^14.1.1",

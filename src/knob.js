@@ -79,16 +79,17 @@ import * as BABYLON from "babylonjs"
 /**
  * @typedef {object} KNURLING_CONFIG
  * @property {"pyramid"|"rectangle"|"cylinder"|"cone"|"triangle"} [shape]
- * @property {number} sizeX
- * @property {number} sizeY
+ * @property {number} width
+ * @property {number} height
  * @property {number} depth
- * @property {number} radialCount
+ * @property {number} columns
  * @property {number} [verticalSpacing]
  * @property {number} [verticalOffset] 
  * @property {number} [rise]
  * @property {number[]} [range]
  * @property {number} [shapeRotation]
- * @property {number} [depthSmoothing]
+ * @property {number} [taper]
+ * @property {boolean} [taperAll]
  */
 
 /**
@@ -106,7 +107,8 @@ import * as BABYLON from "babylonjs"
  * @property {number} [scaleSmoothing=0]
  * @property {number} [angle=0]
  * @property {number} [angleSmoothing=0]
- * @property {boolean} [substractive=false]
+ * @property {boolean} [taperWidth]
+ * @property {boolean} [subtractive=false]
  */
 
 /**
@@ -115,6 +117,8 @@ import * as BABYLON from "babylonjs"
  * @property {number} depth 
  * @property {boolean} [leftHanded]
  * @property {number[]} range
+ * @property {number} [taperTop]
+ * @property {number} [taperBottom]
  */
 
 /**
@@ -147,10 +151,11 @@ export class KNOB {
 		this.screwHoleSplines = /** @type {Mesh[]} */ ([])
 		this.pointers = /** @type {Mesh[]} */ ([])
 		this.draftMode = !!draftMode
-		this.substractionMeshes = /** @type {Mesh[]} */ ([])
+		this.subtractionMeshes = /** @type {Mesh[]} */ ([])
 		/** @type {BABYLON.Mesh} */
 		this.finalShape
 		this.update(config)
+		this.setDraftMode(this.draftMode)
 	}
 
 	/**
@@ -167,7 +172,7 @@ export class KNOB {
 
 		let bodyUpdated = false
 		if (partsToUpdate.indexOf("body") + 1) {
-			this.disposeMesh(this.bodyShape)
+			this._disposeMesh(this.bodyShape)
 			Object.assign(this.config.body, config.body)
 			this.config.body.segments.sort((a, b) => a.height - b.height)
 			this.bodyShape = this._createBody(this.config.body)
@@ -179,10 +184,10 @@ export class KNOB {
 			Object.assign(this.config.screwHole, config.screwHole)
 			this.config.screwHole.segments.sort((a, b) => a.height - b.height)
 			const tempShape = this._createScrewHole(this.config.screwHole)
-			this.disposeMesh(this.screwHoleShape)
+			this._disposeMesh(this.screwHoleShape)
 			this.screwHoleShape = tempShape
 			if (this.screwHoleShape)
-				this.addForSubstraction(this.screwHoleShape)
+				this._addForSubtraction(this.screwHoleShape)
 
 			partsToUpdate.push("internalSplines")
 			partsToUpdate.push("internalThreads")
@@ -257,26 +262,22 @@ export class KNOB {
 				const configKey = creatorInfo.key || key
 				if (index == undefined || !creatorInfo.parent[configKey][index]) {
 					creatorInfo.parent[configKey] = JSON.parse(JSON.stringify(creatorInfo.source))
-					creatorInfo.stash.forEach(mesh => _this.disposeMesh(mesh))
+					creatorInfo.stash.forEach(mesh => _this._disposeMesh(mesh))
 					creatorInfo.stash.length = 0
 					creatorInfo.stash.push(...creatorInfo.parent[configKey]
 						//@ts-ignore
 						.map(c => creatorInfo.creator(c)))
 				} else {
 					Object.assign(creatorInfo.parent[configKey][index], creatorInfo.source[index])
-					_this.disposeMesh(creatorInfo.stash[index])
+					_this._disposeMesh(creatorInfo.stash[index])
 					creatorInfo.stash[index] = creatorInfo.creator(creatorInfo.parent[configKey][index])
 				}
 			}
 		})
 
-		if (bodyUpdated || this.substractionSetUpdated) {
-			if (!this._performSubstraction()) {
-				this.finalShape = this.bodyShape
-				this.bodyShape.convertToFlatShadedMesh()
-				this.scene.addMesh(this.bodyShape)
-			}
-		}
+		if (bodyUpdated || this.subtractionSetUpdated)
+			this._performSubtraction()
+
 
 		//for debugging
 		console.log("Mesh Count:" + this.scene.meshes.length)
@@ -336,28 +337,31 @@ export class KNOB {
 
 	/**
 	 * fortunately for us, all meshes subtract from the main body
-	 * @returns {boolean}
 	 */
-	_performSubstraction() {
+	_performSubtraction() {
 		if (this.finalShape && this.finalShape != this.bodyShape)
-			this.disposeMesh(this.finalShape)
+			this._disposeMesh(this.finalShape)
 
-		this.substractionSetUpdated = false
-		if (!this.substractionMeshes.length) {
-			return false
-		} else {
-			let outerCSG = BABYLON.CSG.FromMesh(this.bodyShape)
-			this.scene.removeMesh(this.bodyShape)
-			for (let i = 0; i < this.substractionMeshes.length; i++) {
-				const mesh = this.substractionMeshes[i]
-				const innerCSG = BABYLON.CSG.FromMesh(mesh)
-				this.scene.removeMesh(mesh)
-				outerCSG = outerCSG.subtract(innerCSG)
+		if (!this.subtractionMeshes.length || this.draftMode) {
+			if (this.scene.meshes.indexOf(this.bodyShape) == -1) {
+				this.finalShape = this.bodyShape
+				this.bodyShape.convertToFlatShadedMesh()
+				this.scene.addMesh(this.bodyShape)
 			}
-			this.finalShape = outerCSG.toMesh("finalShape", null, this.scene)
-			this.finalShape.convertToFlatShadedMesh()
+			return
 		}
-		return true
+
+		this.subtractionSetUpdated = false
+		let outerCSG = BABYLON.CSG.FromMesh(this.bodyShape)
+		this.scene.removeMesh(this.bodyShape)
+		for (let i = 0; i < this.subtractionMeshes.length; i++) {
+			const mesh = this.subtractionMeshes[i]
+			const innerCSG = BABYLON.CSG.FromMesh(mesh)
+			this.scene.removeMesh(mesh)
+			outerCSG = outerCSG.subtract(innerCSG)
+		}
+		this.finalShape = outerCSG.toMesh("finalShape", null, this.scene)
+		this.finalShape.convertToFlatShadedMesh()
 	}
 
 	/**
@@ -403,7 +407,7 @@ export class KNOB {
 	 * @returns {Mesh}
 	 */
 	_createKnurling(config) {
-		if (!(config.sizeX && config.sizeY && config.depth))
+		if (!(config.width && config.height && config.depth))
 			return null
 		/** @type {BABYLON.Mesh} */
 		let baseMesh
@@ -416,12 +420,13 @@ export class KNOB {
 		if (config.rise == undefined)
 			config.rise = 0.9
 
-		const halfY = config.sizeY / 2
+		const halfY = config.height / 2
+		const halfW = config.width / 2
 		switch (config.shape) {
 			case "cone":
 			case "cylinder":
 				baseMesh = BABYLON.MeshBuilder.CreateCylinder("baseCylinder", {
-					diameter: config.sizeX,
+					diameter: config.width,
 					height: config.depth,
 					diameterTop: config.shape == "cone" ? 0 : null,
 				})
@@ -429,18 +434,24 @@ export class KNOB {
 				baseMesh.rotation.x = Math.PI / 2
 				break
 			case "rectangle":
-				baseMesh = BABYLON.MeshBuilder.CreateBox("baseBox", {
-					width: config.sizeX,
-					height: config.sizeY,
-					depth: config.depth
+				baseMesh = BABYLON.MeshBuilder.ExtrudeShape("baseBox", {
+					shape: [
+						new BABYLON.Vector3(-halfW, -halfY, 0),
+						new BABYLON.Vector3(halfW, -halfY, 0),
+						new BABYLON.Vector3(halfW, halfY, 0),
+						new BABYLON.Vector3(-halfW, halfY, 0)
+					],
+					closeShape: true,
+					path: [new BABYLON.Vector3(0, 0, 0), new BABYLON.Vector3(0, 0, config.depth)],
+					cap: BABYLON.Mesh.CAP_ALL
 				})
 				baseMesh.rotation.z = config.shapeRotation || 0
 				break
 			case "triangle":
 				baseMesh = BABYLON.MeshBuilder.ExtrudeShape("baseTraingle", {
 					shape: [new BABYLON.Vector3(0, halfY, 0),
-						new BABYLON.Vector3(-config.sizeX / 2, -halfY, 0),
-						new BABYLON.Vector3(config.sizeX / 2, -halfY, 0)
+						new BABYLON.Vector3(-halfW, -halfY, 0),
+						new BABYLON.Vector3(-halfW, -halfY, 0)
 					],
 					closeShape: true,
 					path: [new BABYLON.Vector3(0, 0, 0), new BABYLON.Vector3(0, 0, config.depth)],
@@ -450,7 +461,7 @@ export class KNOB {
 				baseMesh.rotation.z = config.shapeRotation || 0
 				break
 			case "pyramid": {
-				const halfX = config.sizeX / 2
+				const halfX = config.width / 2
 				const knurlingShape = {
 					"name": "Square Pyramid (J1)",
 					"category": ["Johnson Solid"],
@@ -477,15 +488,12 @@ export class KNOB {
 			}
 		}
 
-		baseMesh.position.z = this.config.body.segments[0].radius -
+		baseMesh.position.z = this.bodyProfile.side[0].x -
 			((1 - config.rise) * config.depth)
 
-		if (config.shape == "rectangle")
-			baseMesh.position.z += config.depth / 2
-
-		const yDist = config.sizeY + config.verticalSpacing
-		config.radialCount = Math.min(200, config.radialCount)
-		const radialStep = Math.PI * 2 / config.radialCount
+		const yDist = config.height + config.verticalSpacing
+		config.columns = Math.min(200, config.columns)
+		const radialStep = Math.PI * 2 / config.columns
 		let angle = 0
 		const verticalAxis = new BABYLON.Vector3(0, 1, 0)
 		const xAxis = new BABYLON.Vector3(-1, 0, 0)
@@ -498,10 +506,12 @@ export class KNOB {
 		const limitStart = this.bodyProfile.getDistanceAt(config.range[0])
 		const limitEnd = this.bodyProfile.getDistanceAt(config.range[1])
 		const yPosLimit = limitEnd - halfY
-		const halfPoint = (limitStart + limitEnd) / 2
-		const smoothingHeight = this.bodyProfile.height * config.depthSmoothing
+		const range = limitEnd - limitStart
+		const taperTopPosition = limitEnd - config.taper * range
+		const taperBottomPosition = limitStart + config.taper * range
+		const smoothingHeight = this.bodyProfile.height * (config.taper || 0)
 
-		for (let j = 0; j < config.radialCount; j++) {
+		for (let j = 0; j < config.columns; j++) {
 			let slot = 0
 			let yPos = limitStart + halfY + ((j * config.verticalOffset) % yDist)
 			const scaleMap = /** @type {number[]} */ ([])
@@ -512,13 +522,12 @@ export class KNOB {
 				slopeHeightMap.push(this.bodyProfile.getInfoAt(yPos, slot - 1))
 				let scale = 1
 				if (smoothingHeight) {
-					if (yPos < halfPoint)
+					if (yPos < taperBottomPosition)
 						scale = Math.min(1, (yPos - limitStart) / smoothingHeight)
-					else
+					else if (yPos > taperTopPosition)
 						scale = Math.min(1, (limitEnd - yPos) / smoothingHeight)
 				}
 				scaleMap.push(scale)
-
 				yPos += yDist
 			}
 			for (let i = 0; i < slopeHeightMap.length; i++) {
@@ -533,7 +542,12 @@ export class KNOB {
 				)
 				t.rotateAround(center, verticalAxis, angle)
 				t.setParent(parentMesh)
-				t.scaling.z = scaleMap[i]
+				if (config.taperAll)
+					t.scaling.scaleInPlace(scaleMap[i])
+				else if (config.shape == "cone" || config.shape == "cylinder")
+					t.scaling.y = scaleMap[i]
+				else
+					t.scaling.z = scaleMap[i]
 				referenceMesh = t
 			}
 			angle += radialStep
@@ -581,6 +595,12 @@ export class KNOB {
 		if (config.rootThickness == undefined)
 			config.rootThickness = config.thickness
 
+		//zero causes weird artifacts
+		if (config.topScale == 0)
+			config.topScale = 0.001
+		if (config.bottomScale == 0)
+			config.bottomScale = 0.001
+
 		let oppSmoothing = config.scaleSmoothing < 0
 		config.scaleSmoothing = Math.abs(config.scaleSmoothing)
 		let oppAngleSmoothing = config.angleSmoothing < 0
@@ -595,16 +615,16 @@ export class KNOB {
 		let pathRotation = 0
 
 		const shapeFn = config.width ? this._createKeyProfile : this._createSplineProfile
-		const isInward = !internal != !config.substractive
+		const isInward = !internal != !config.subtractive
 
 		for (let i = 0; i <= tessellations; i++) {
 			const dInfo = profile.getInfoAt(currentD)
 			let dScale = 1
 			if (dInfo.y >= midSection) {
-				const ratio = (dInfo.y - midSection) / (absYEnd - midSection)
+				const ratio = Math.min(1, (dInfo.y - midSection) / (absYEnd - midSection))
 				dScale += (config.topScale - 1) * smooth(ratio, config.scaleSmoothing, oppSmoothing)
 			} else {
-				const ratio = (dInfo.y - midSection) / (absYStart - midSection)
+				const ratio = Math.max(0, (dInfo.y - midSection) / (absYStart - midSection))
 				dScale += (config.bottomScale - 1) * smooth(ratio, config.scaleSmoothing, oppSmoothing)
 			}
 			currentD += distanceStep
@@ -614,15 +634,16 @@ export class KNOB {
 				oppAngleSmoothing)
 			pathRotation += angleStep
 
+			const widthScale = config.taperWidth ? dScale : 1
 			shapes[i + 1] = shapeFn({
-				rootThickness: config.rootThickness * dScale,
-				tipThickness: config.thickness * dScale,
+				rootThickness: config.rootThickness * widthScale,
+				tipThickness: config.thickness * widthScale,
+				width: config.width * widthScale,
 				height: config.height * dScale,
 				radius: dInfo.x,
 				smoothing: config.smoothing,
 				yPos: dInfo.y,
 				offset: currentAngle,
-				width: config.width * dScale,
 				inward: isInward
 			})
 		}
@@ -646,8 +667,8 @@ export class KNOB {
 			instance.setParent(baseMesh)
 		}
 
-		if (config.substractive)
-			this.addForSubstraction(baseMesh)
+		if (config.subtractive)
+			this._addForSubtraction(baseMesh)
 		else
 			baseMesh.convertToFlatShadedMesh()
 
@@ -777,6 +798,18 @@ export class KNOB {
 		const zPosMax = profile[profile.length - 1].z
 		profile.push(new BABYLON.Vector3((c.radius + h), c.yPos, zPosMax))
 		profile.push(new BABYLON.Vector3((c.radius + h), c.yPos, -zPosMax))
+		/**
+		 * @param {BABYLON.Vector3} p 
+		 */
+		function rotatePoint(p) {
+			const x = p.x
+			const z = p.z
+			p.x = x * Math.cos(c.offset) - z * Math.sin(c.offset)
+			p.z = x * Math.sin(c.offset) + z * Math.cos(c.offset)
+		}
+
+		if (c.offset)
+			profile.forEach(rotatePoint)
 
 		profile.push(profile[0].clone())
 		return profile
@@ -801,6 +834,9 @@ export class KNOB {
 
 		//tessellation on each turn will depend upon radius at height
 		let currentY = absYStart
+		const range = absYEnd - absYStart
+		const taperTopPosition = absYEnd - config.taperTop * range
+		const taperBottomPosition = absYStart + config.taperBottom * range
 		const paths = /** @type {BABYLON.Vector3[][]} */ ([])
 		let currentAngle = 0
 		let yStep, radialStep, angleStep, currentRadius, tessellations, currentStep = 0
@@ -825,8 +861,17 @@ export class KNOB {
 			const point = getPointAt(currentAngle, currentRadius)
 			point.z = point.y
 			point.y = currentY
-			paths[pathIndex++] = this._createThreadProfile(config.pitch, depth,
-				currentRadius, currentAngle, currentY, internal)
+			let scale = 1
+
+			if (currentY >= taperTopPosition)
+				scale = (absYEnd - currentY) / (absYEnd - taperTopPosition)
+			else if (currentY <= taperBottomPosition)
+				scale = (currentY - absYStart) / (taperBottomPosition - absYStart)
+
+			paths[pathIndex++] = this._createThreadProfile(config.pitch * scale,
+				depth * scale, currentRadius, currentAngle, currentY,
+				profile.getInfoAt(profile.getDistanceAt(currentY / profile.height)).angle,
+				internal)
 			currentY += yStep
 			currentRadius += radialStep
 			currentAngle += angleStep
@@ -848,15 +893,18 @@ export class KNOB {
 	}
 
 	/**
+	 * !!What about threads on inclined surfaces? 
+	 *
 	 * @param {number} pitch
 	 * @param {number} depth
 	 * @param {number} br base Radius
 	 * @param {number} angle
 	 * @param {number} yPos
 	 * @param {boolean} [internal] 
+	 * @param {number} slope
 	 * @returns {BABYLON.Vector3[]}
 	 */
-	_createThreadProfile(pitch, depth, br, angle, yPos, internal) {
+	_createThreadProfile(pitch, depth, br, angle, yPos, slope, internal) {
 		const path = /** @type {BABYLON.Vector3[]} */ ([])
 		const directionPoint = new BABYLON.Vector3(Math.cos(angle), 0, Math.sin(angle))
 
@@ -865,9 +913,11 @@ export class KNOB {
 		const frs = pitch / 4
 		const ascentLength = (pitch - (fcsh * 2) - frs) / 2
 
+
 		let y = yPos - (pitch / 2) + fcsh
 		const point1 = directionPoint.scale(br)
 		point1.y = y
+
 		y += ascentLength
 		const point2 = directionPoint.scale((br + (direction * depth)))
 		point2.y = y
@@ -877,38 +927,40 @@ export class KNOB {
 		y += ascentLength
 		const point4 = point1.clone()
 		point4.y = y
-		path.push(point1, point2, point3, point4, point1.clone())
+
+		path.push(point1, point2, point3, point4)
+		path.push(path[0].clone())
 
 		return path
 	}
 
 	dispose() {
-		this.disposeMesh(this.finalShape)
-		this.disposeMesh(this.screwHoleShape)
-		this.disposeMesh(this.bodyShape)
+		this._disposeMesh(this.finalShape)
+		this._disposeMesh(this.screwHoleShape)
+		this._disposeMesh(this.bodyShape)
 		const _this = this
-		this.surfaceSplines.forEach(mesh => _this.disposeMesh(mesh))
-		this.screwHoleSplines.forEach(mesh => _this.disposeMesh(mesh))
-		this.knurlingMeshes.forEach(mesh => _this.disposeMesh(mesh))
-		this.pointers.forEach(mesh => _this.disposeMesh(mesh))
-		this.surfaceThreads.forEach(mesh => _this.disposeMesh(mesh))
-		this.screwHoleThreads.forEach(mesh => _this.disposeMesh(mesh))
+		this.surfaceSplines.forEach(mesh => _this._disposeMesh(mesh))
+		this.screwHoleSplines.forEach(mesh => _this._disposeMesh(mesh))
+		this.knurlingMeshes.forEach(mesh => _this._disposeMesh(mesh))
+		this.pointers.forEach(mesh => _this._disposeMesh(mesh))
+		this.surfaceThreads.forEach(mesh => _this._disposeMesh(mesh))
+		this.screwHoleThreads.forEach(mesh => _this._disposeMesh(mesh))
 	}
 
 	/**
 	 * @param {Mesh} mesh 
 	 */
-	disposeMesh(mesh) {
+	_disposeMesh(mesh) {
 		if (!mesh)
 			return
 
 		mesh.dispose()
 
-		if (this.substractionMeshes.length) {
-			const indexInSubstractionList = this.substractionMeshes.indexOf(mesh)
-			if (indexInSubstractionList != -1) {
-				this.substractionMeshes.splice(indexInSubstractionList, 1)
-				this.substractionSetUpdated = true
+		if (this.subtractionMeshes.length) {
+			const indexInSubtractionList = this.subtractionMeshes.indexOf(mesh)
+			if (indexInSubtractionList != -1) {
+				this.subtractionMeshes.splice(indexInSubtractionList, 1)
+				this.subtractionSetUpdated = true
 			}
 		}
 	}
@@ -916,11 +968,11 @@ export class KNOB {
 	/**
 	 * @param {Mesh} mesh
 	 */
-	addForSubstraction(mesh) {
-		this.substractionMeshes.push(mesh)
+	_addForSubtraction(mesh) {
+		this.subtractionMeshes.push(mesh)
 		const _this = this
-		mesh.getChildMeshes().forEach(( /** @type {Mesh} */ mesh) => _this.addForSubstraction(mesh))
-		this.substractionSetUpdated = true
+		mesh.getChildMeshes().forEach(( /** @type {Mesh} */ mesh) => _this._addForSubtraction(mesh))
+		this.subtractionSetUpdated = true
 	}
 
 	/**
@@ -981,6 +1033,46 @@ export class KNOB {
 			a.click()
 		}
 		return data
+	}
+
+	/**
+	 * @param {boolean} isDraft 
+	 */
+	setDraftMode(isDraft) {
+		this.draftMode = isDraft
+		if (this.draftMode)
+			this.scene.materials.forEach(mat => {
+				mat.alpha = 0.3
+				mat.backFaceCulling = false
+				mat.needDepthPrePass = true
+			})
+		else {
+			this.scene.materials.forEach(mat => {
+				mat.alpha = 1
+				mat.backFaceCulling = true
+				mat.needDepthPrePass = false
+			})
+			if (this.subtractionSetUpdated)
+				this._performSubtraction()
+		}
+	}
+
+	/**
+	 * @param {boolean} download 
+	 * @returns string
+	 */
+	exportJSON(download) {
+		const configStr = JSON.stringify(this.config, null, 2)
+
+		if (download) {
+			let a = document.createElement("a")
+			let blob = new Blob([configStr], { type: "application/json" })
+			a.href = window.URL.createObjectURL(blob)
+			a.download = "knob.json"
+			a.click()
+		}
+
+		return configStr
 	}
 }
 
@@ -1054,9 +1146,10 @@ class Profile {
 	 */
 	constructor(config, fullLength) {
 		let segments = /** @type {SEGMENT[]} */ ([])
-		if (config.segments.length == 1) {
-			segments.push({ height: 0, radius: config.segments[0].radius, smoothing: 0 })
-			segments.push({ height: fullLength ? 1 : config.segments[0].height, radius: config.segments[0].radius, smoothing: 0 })
+		if (config.segments.length <= 1) {
+			const zeroSegment = config.segments[0] || { radius: 10, height: 0 }
+			segments.push({ height: 0, radius: zeroSegment.radius, smoothing: 0 })
+			segments.push({ height: fullLength ? 1 : zeroSegment.height, radius: zeroSegment.radius, smoothing: 0 })
 		} else {
 			if (fullLength && config.segments[0].height != 0)
 				segments.push({ height: 0, smoothing: 0, radius: config.segments[0].radius })
@@ -1161,7 +1254,7 @@ class Profile {
 	}
 
 	/**
-	 * @param {number} y The ratio along the height of the profile
+	 * @param {number} y The ratio along the height of the profile. Starts from base.
 	 * @returns {number}
 	 */
 	getDistanceAt(y) {
@@ -1175,7 +1268,9 @@ class Profile {
 
 		const start = this.side[slot - 1]
 		const end = this.side[slot]
-		const distRatio = (absY - start.y) / (end.y - start.y)
+		let distRatio = 0
+		if (end.y - start.y > 0)
+			distRatio = (absY - start.y) / (end.y - start.y)
 		return this.lengthMap[slot - 1] +
 			(this.lengthMap[slot] - this.lengthMap[slot - 1]) * distRatio
 	}
